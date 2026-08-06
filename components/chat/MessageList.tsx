@@ -11,6 +11,7 @@ interface MessageListProps {
   isLoading: boolean;
   onEditStatement: (id: string, content: string) => Promise<void> | void;
   onDeleteStatement: (id: string) => Promise<void> | void;
+  currentUser?: any;
 }
 
 export function MessageList({
@@ -18,6 +19,7 @@ export function MessageList({
   isLoading,
   onEditStatement,
   onDeleteStatement,
+  currentUser,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -52,14 +54,27 @@ export function MessageList({
       ref={scrollRef}
       className="flex-1 overflow-y-auto p-4 sm:p-6 chat-pattern space-y-1"
     >
-      {statements.map((statement) => (
-        <MessageBubble
-          key={statement.id}
-          statement={statement}
-          onEdit={onEditStatement}
-          onDelete={onDeleteStatement}
-        />
-      ))}
+      {statements.map((statement, index) => {
+        const isOwn = currentUser
+          ? statement.sender_id === currentUser.id
+          : true; // In demo mode all messages are "own"
+
+        // Detect if previous statement was from the same sender (for grouping)
+        const prevStatement = statements[index - 1];
+        const isSameAsPrev = prevStatement && prevStatement.sender_id === statement.sender_id;
+
+        return (
+          <MessageBubble
+            key={statement.id}
+            statement={statement}
+            isOwn={isOwn}
+            showSenderName={!isOwn && !isSameAsPrev}
+            onEdit={onEditStatement}
+            onDelete={onDeleteStatement}
+          />
+        );
+      })}
     </div>
   );
 }
+

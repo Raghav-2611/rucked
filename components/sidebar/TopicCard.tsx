@@ -3,7 +3,7 @@
 import React from 'react';
 import { TopicWithPreview } from '@/lib/types';
 import { formatTopicTimestamp } from '@/lib/utils';
-import { Hash } from 'lucide-react';
+import { Users, User } from 'lucide-react';
 
 interface TopicCardProps {
   topic: TopicWithPreview;
@@ -13,6 +13,13 @@ interface TopicCardProps {
 
 export function TopicCard({ topic, isActive, onSelect }: TopicCardProps) {
   const timestamp = formatTopicTimestamp(topic.lastActivityAt || topic.created_at);
+
+  // Resolve display title and avatar depending on DM or Group
+  const displayTitle = topic.is_group
+    ? topic.title
+    : (topic.dm_peer?.display_name || topic.dm_peer?.username || topic.title);
+
+  const initial = displayTitle?.[0]?.toUpperCase() || '?';
 
   return (
     <button
@@ -24,14 +31,21 @@ export function TopicCard({ topic, isActive, onSelect }: TopicCardProps) {
           : 'bg-[#202C33]/40 hover:bg-[#202C33] border-transparent hover:border-[#2A3942]'
       }`}
     >
+      {/* Icon / Initials */}
       <div
-        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors font-bold text-sm ${
           isActive
             ? 'bg-[#00A884] text-white'
             : 'bg-[#2A3942] text-[#8696A0] group-hover:text-[#00A884] group-hover:bg-[#2A3942]/80'
         }`}
       >
-        <Hash className="w-5 h-5" />
+        {topic.is_group ? (
+          <Users className="w-5 h-5" />
+        ) : topic.dm_peer ? (
+          <span>{initial}</span>
+        ) : (
+          <User className="w-5 h-5" />
+        )}
       </div>
 
       <div className="flex-1 min-w-0">
@@ -41,7 +55,7 @@ export function TopicCard({ topic, isActive, onSelect }: TopicCardProps) {
               isActive ? 'text-[#00A884]' : 'text-[#E9EDEF] group-hover:text-[#E9EDEF]'
             }`}
           >
-            {topic.title}
+            {displayTitle}
           </h3>
           {timestamp && (
             <span className="text-[11px] font-medium text-[#8696A0] shrink-0">
@@ -52,7 +66,7 @@ export function TopicCard({ topic, isActive, onSelect }: TopicCardProps) {
 
         <div className="flex items-center justify-between gap-2 mt-1">
           <p className="text-xs text-[#8696A0] truncate">
-            {topic.lastStatementPreview ? topic.lastStatementPreview : 'No statements yet'}
+            {topic.lastStatementPreview ? topic.lastStatementPreview : 'No messages yet'}
           </p>
 
           {typeof topic.statementCount === 'number' && topic.statementCount > 0 && (

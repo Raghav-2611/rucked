@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { Topic, Statement, TopicWithPreview } from '@/lib/types';
+import { Topic, Statement, TopicWithPreview, Profile } from '@/lib/types';
 import { TopicList } from '@/components/sidebar/TopicList';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageList } from '@/components/chat/MessageList';
@@ -11,6 +11,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { RenameModal } from '@/components/ui/RenameModal';
 import { ConfigBanner } from '@/components/ui/ConfigBanner';
+import { Auth } from '@/components/auth/Auth';
+import { Loader2 } from 'lucide-react';
 
 // Mock initial data for local demo mode when env vars aren't set
 const INITIAL_DEMO_TOPICS: Topic[] = [
@@ -18,11 +20,15 @@ const INITIAL_DEMO_TOPICS: Topic[] = [
     id: 'demo-1',
     title: 'Docker & Containers',
     created_at: new Date(Date.now() - 86400000).toISOString(),
+    is_group: false,
+    created_by: null,
   },
   {
     id: 'demo-2',
     title: 'Project Ideas',
     created_at: new Date(Date.now() - 3600000).toISOString(),
+    is_group: true,
+    created_by: null,
   },
 ];
 
@@ -32,23 +38,32 @@ const INITIAL_DEMO_STATEMENTS: Statement[] = [
     topic_id: 'demo-1',
     content: 'Today I learned about Docker volumes and named mounts.',
     created_at: new Date(Date.now() - 86400000).toISOString(),
+    sender_id: 'demo-user-1',
   },
   {
     id: 'stmt-2',
     topic_id: 'demo-1',
     content: 'Use `docker compose up -d` to run services in detached background mode.',
     created_at: new Date(Date.now() - 43200000).toISOString(),
+    sender_id: 'demo-user-1',
   },
   {
     id: 'stmt-3',
     topic_id: 'demo-2',
     content: 'Build a personal thought log called "rucked" with WhatsApp dark theme UI.',
     created_at: new Date(Date.now() - 3600000).toISOString(),
+    sender_id: 'demo-user-2',
   },
 ];
 
 export default function HomePage() {
   const [hasSupabase, setHasSupabase] = useState<boolean>(true);
+  
+  // Auth state
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
+
   const [topics, setTopics] = useState<TopicWithPreview[]>([]);
   const [activeTopic, setActiveTopic] = useState<TopicWithPreview | null>(null);
   const [statements, setStatements] = useState<Statement[]>([]);
@@ -68,22 +83,102 @@ export default function HomePage() {
   const [demoStatements, setDemoStatements] = useState<Statement[]>(INITIAL_DEMO_STATEMENTS);
 
   useEffect(() => {
-    setHasSupabase(isSupabaseConfigured());
+    const configured = isSupabaseConfigured();
+    setHasSupabase(configured);
+    
+    if (configured) {
+      // Fetch initial session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setCurrentUser(session?.user ?? null);
+        setIsLoadingAuth(false);
+      });
+
+      // Listen to auth changes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setCurrentUser(session?.user ?? null);
+        if (!session) {
+          setCurrentProfile(null);
+          setTopics([]);
+          setActiveTopic(null);
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    } else {
+      setIsLoadingAuth(false);
+    }
   }, []);
+
+  // Fetch current profile when user is authenticated
+  useEffect(() => {
+    if (hasSupabase && currentUser) {
+      const fetchProfile = async () => {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', currentUser.id)
+          .single();
+        if (data) {
+          setCurrentProfile(data);
+        }
+      };
+      fetchProfile();
+    } else {
+      setCurrentProfile(null);
+    }
+  }, [currentUser, hasSupabase]);
 
   // Fetch Topics and calculate previews & counts
   const fetchTopics = useCallback(async () => {
+    if (hasSupabase && !currentUser) return;
     setIsLoadingTopics(true);
     try {
-      if (isSupabaseConfigured()) {
-        const { data: topicsData, error: topicsError } = await supabase
-          .from('topics')
-          .select('*')
-          .order('created_at', { ascending: false });
+      if (hasSupabase && currentUser) {
+        // Query topics where user is a member
+        const { data: memberships, error: memberError } = await supabase
+          .from('topic_members')
+          .select(`
+            topic_id,
+            topics (
+              id,
+              title,
+              created_at,
+              is_group,
+              created_by
+            )
+          `)
+          .eq('user_id', currentUser.id);
 
-        if (topicsError) throw topicsError;
+        if (memberError) throw memberError;
 
-        if (topicsData) {
+        const topicsData = (memberships || [])
+          .map((m: any) => m.topics)
+          .filter(Boolean) as Topic[];
+
+        if (topicsData.length > 0) {
+          const topicIds = topicsData.map(t => t.id);
+
+          // Get all members for these topics to construct profiles
+          const { data: allMembers, error: allMembersError } = await supabase
+            .from('topic_members')
+            .select(`
+              topic_id,
+              user_id,
+              created_at,
+              profiles (
+                id,
+                username,
+                display_name,
+                avatar_url,
+                created_at
+              )
+            `)
+            .in('topic_id', topicIds);
+
+          if (allMembersError) throw allMembersError;
+
           // Fetch latest statements for each topic preview
           const { data: stmtsData } = await supabase
             .from('statements')
@@ -94,8 +189,24 @@ export default function HomePage() {
             const topicStmts = (stmtsData || []).filter((s: Statement) => s.topic_id === t.id);
             const lastStmt = topicStmts[topicStmts.length - 1];
 
+            const membersForTopic = (allMembers || [])
+              .filter((m: any) => m.topic_id === t.id)
+              .map((m: any) => ({
+                topic_id: m.topic_id,
+                user_id: m.user_id,
+                created_at: m.created_at,
+                profile: m.profiles
+              }));
+
+            const peerMember = !t.is_group
+              ? membersForTopic.find(m => m.user_id !== currentUser.id)
+              : null;
+            const dm_peer = peerMember ? peerMember.profile : null;
+
             return {
               ...t,
+              members: membersForTopic,
+              dm_peer,
               statementCount: topicStmts.length,
               lastStatementPreview: lastStmt ? lastStmt.content : undefined,
               lastActivityAt: lastStmt ? lastStmt.created_at : t.created_at,
@@ -110,9 +221,21 @@ export default function HomePage() {
           });
 
           setTopics(enhancedTopics);
-          if (!activeTopic && enhancedTopics.length > 0) {
+          
+          // Set active topic to maintain active selection or default to first
+          if (activeTopic) {
+            const updatedActive = enhancedTopics.find(t => t.id === activeTopic.id);
+            if (updatedActive) {
+              setActiveTopic(updatedActive);
+            } else {
+              setActiveTopic(enhancedTopics[0] || null);
+            }
+          } else if (enhancedTopics.length > 0) {
             setActiveTopic(enhancedTopics[0]);
           }
+        } else {
+          setTopics([]);
+          setActiveTopic(null);
         }
       } else {
         // Fallback demo mode
@@ -143,25 +266,40 @@ export default function HomePage() {
     } finally {
       setIsLoadingTopics(false);
     }
-  }, [activeTopic, demoTopics, demoStatements]);
+  }, [currentUser, hasSupabase, activeTopic, demoTopics, demoStatements]);
 
   useEffect(() => {
-    fetchTopics();
-  }, [demoTopics, demoStatements]);
+    if (!hasSupabase || currentUser) {
+      fetchTopics();
+    }
+  }, [currentUser, hasSupabase]);
 
   // Fetch Statements for Active Topic
   const fetchStatements = useCallback(async (topicId: string) => {
     setIsLoadingStatements(true);
     try {
-      if (isSupabaseConfigured()) {
+      if (hasSupabase) {
         const { data, error } = await supabase
           .from('statements')
-          .select('*')
+          .select(`
+            id,
+            topic_id,
+            content,
+            created_at,
+            sender_id,
+            sender:sender_id (
+              id,
+              username,
+              display_name,
+              avatar_url,
+              created_at
+            )
+          `)
           .eq('topic_id', topicId)
           .order('created_at', { ascending: true });
 
         if (error) throw error;
-        setStatements(data || []);
+        setStatements((data as unknown as Statement[]) || []);
       } else {
         const stmts = demoStatements.filter((s) => s.topic_id === topicId);
         stmts.sort(
@@ -174,7 +312,7 @@ export default function HomePage() {
     } finally {
       setIsLoadingStatements(false);
     }
-  }, [demoStatements]);
+  }, [hasSupabase, demoStatements]);
 
   useEffect(() => {
     if (activeTopic) {
@@ -182,7 +320,7 @@ export default function HomePage() {
     } else {
       setStatements([]);
     }
-  }, [activeTopic, fetchStatements]);
+  }, [activeTopic]);
 
   // Handle Select Topic
   const handleSelectTopic = (topic: TopicWithPreview) => {
@@ -190,38 +328,97 @@ export default function HomePage() {
     setShowMobileChat(true);
   };
 
-  // Create Topic
-  const handleCreateTopic = async (title: string) => {
+  // Create Topic (Group or DM)
+  const handleCreateTopic = async (title: string, isGroup: boolean = false, memberUsernames: string[] = []) => {
     try {
-      if (isSupabaseConfigured()) {
-        const { data, error } = await supabase
+      if (hasSupabase && currentUser) {
+        // DM Check: If DM with single user, verify if chat already exists
+        if (!isGroup && memberUsernames.length === 1) {
+          const targetUsername = memberUsernames[0];
+          const { data: peerProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', targetUsername)
+            .single();
+
+          if (peerProfile) {
+            const existingDM = topics.find(t => 
+              !t.is_group && 
+              t.members?.some(m => m.user_id === peerProfile.id)
+            );
+
+            if (existingDM) {
+              setActiveTopic(existingDM);
+              setShowMobileChat(true);
+              return;
+            }
+          }
+        }
+
+        // 1. Create topic
+        const { data: topicData, error: topicError } = await supabase
           .from('topics')
-          .insert([{ title }])
+          .insert([{ title, is_group: isGroup, created_by: currentUser.id }])
           .select()
           .single();
 
-        if (error) throw error;
-        if (data) {
-          const newTopic: TopicWithPreview = {
-            ...data,
+        if (topicError) throw topicError;
+        if (topicData) {
+          // 2. Add creator to topic_members
+          const membersToInsert = [{ topic_id: topicData.id, user_id: currentUser.id }];
+
+          // 3. Resolve and add other members by usernames
+          if (memberUsernames.length > 0) {
+            const { data: profilesData, error: profilesError } = await supabase
+              .from('profiles')
+              .select('*')
+              .in('username', memberUsernames);
+            
+            if (profilesError) throw profilesError;
+            if (profilesData) {
+              profilesData.forEach((profile: Profile) => {
+                if (profile.id !== currentUser.id) {
+                  membersToInsert.push({ topic_id: topicData.id, user_id: profile.id });
+                }
+              });
+            }
+          }
+
+          const { error: membersError } = await supabase
+            .from('topic_members')
+            .insert(membersToInsert);
+
+          if (membersError) throw membersError;
+
+          // Reload topics
+          await fetchTopics();
+          
+          // Switch to new topic (will resolve correctly in state after fetch)
+          const newTopicObj: TopicWithPreview = {
+            ...topicData,
             statementCount: 0,
-            lastActivityAt: data.created_at,
+            lastActivityAt: topicData.created_at,
+            members: []
           };
-          setTopics((prev) => [newTopic, ...prev]);
-          setActiveTopic(newTopic);
+          setActiveTopic(newTopicObj);
           setShowMobileChat(true);
         }
       } else {
+        // Fallback demo mode
         const newTopic: Topic = {
           id: `demo-${Date.now()}`,
           title,
           created_at: new Date().toISOString(),
+          is_group: isGroup,
+          created_by: null,
         };
         setDemoTopics((prev) => [newTopic, ...prev]);
         const enhanced: TopicWithPreview = {
           ...newTopic,
           statementCount: 0,
           lastActivityAt: newTopic.created_at,
+          members: [],
+          dm_peer: null
         };
         setActiveTopic(enhanced);
         setShowMobileChat(true);
@@ -236,7 +433,7 @@ export default function HomePage() {
     if (!activeTopic) return;
     try {
       setIsProcessingModal(true);
-      if (isSupabaseConfigured()) {
+      if (hasSupabase) {
         const { error } = await supabase
           .from('topics')
           .update({ title: newTitle })
@@ -266,7 +463,7 @@ export default function HomePage() {
     if (!activeTopic) return;
     try {
       setIsProcessingModal(true);
-      if (isSupabaseConfigured()) {
+      if (hasSupabase) {
         const { error } = await supabase
           .from('topics')
           .delete()
@@ -296,16 +493,29 @@ export default function HomePage() {
     const nowStr = new Date().toISOString();
 
     try {
-      if (isSupabaseConfigured()) {
+      if (hasSupabase && currentUser) {
         const { data, error } = await supabase
           .from('statements')
-          .insert([{ topic_id: activeTopic.id, content }])
-          .select()
+          .insert([{ topic_id: activeTopic.id, content, sender_id: currentUser.id }])
+          .select(`
+            id,
+            topic_id,
+            content,
+            created_at,
+            sender_id,
+            sender:sender_id (
+              id,
+              username,
+              display_name,
+              avatar_url,
+              created_at
+            )
+          `)
           .single();
 
         if (error) throw error;
         if (data) {
-          setStatements((prev) => [...prev, data]);
+          setStatements((prev) => [...prev, data as unknown as Statement]);
           
           // Update topic preview and order
           setTopics((prev) => {
@@ -333,6 +543,7 @@ export default function HomePage() {
           topic_id: activeTopic.id,
           content,
           created_at: nowStr,
+          sender_id: 'demo-user-1',
         };
         setDemoStatements((prev) => [...prev, newStmt]);
         setStatements((prev) => [...prev, newStmt]);
@@ -364,7 +575,7 @@ export default function HomePage() {
   // Edit Statement
   const handleEditStatement = async (statementId: string, newContent: string) => {
     try {
-      if (isSupabaseConfigured()) {
+      if (hasSupabase) {
         const { error } = await supabase
           .from('statements')
           .update({ content: newContent })
@@ -398,7 +609,7 @@ export default function HomePage() {
   const handleDeleteStatement = async (statementId: string) => {
     if (!activeTopic) return;
     try {
-      if (isSupabaseConfigured()) {
+      if (hasSupabase) {
         const { error } = await supabase
           .from('statements')
           .delete()
@@ -430,6 +641,30 @@ export default function HomePage() {
     }
   };
 
+  const handleSignOut = async () => {
+    if (hasSupabase) {
+      await supabase.auth.signOut();
+      setCurrentUser(null);
+      setCurrentProfile(null);
+      setTopics([]);
+      setActiveTopic(null);
+    }
+  };
+
+  // Loading indicator for Auth
+  if (hasSupabase && isLoadingAuth) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#111B21] text-[#00A884]">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    );
+  }
+
+  // Redirect to Auth screen if not authenticated
+  if (hasSupabase && !currentUser) {
+    return <Auth onAuthSuccess={() => {}} />;
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#111B21]">
       {!hasSupabase && <ConfigBanner />}
@@ -448,6 +683,8 @@ export default function HomePage() {
             onSelectTopic={handleSelectTopic}
             onCreateTopic={handleCreateTopic}
             isLoading={isLoadingTopics}
+            onSignOut={handleSignOut}
+            currentProfile={currentProfile}
           />
         </div>
 
@@ -465,6 +702,8 @@ export default function HomePage() {
                 onBackMobile={() => setShowMobileChat(false)}
                 onRenameTopic={() => setIsRenameModalOpen(true)}
                 onDeleteTopic={() => setIsDeleteModalOpen(true)}
+                currentUser={currentUser}
+                onMemberAdded={fetchTopics}
               />
 
               <MessageList
@@ -472,6 +711,7 @@ export default function HomePage() {
                 isLoading={isLoadingStatements}
                 onEditStatement={handleEditStatement}
                 onDeleteStatement={handleDeleteStatement}
+                currentUser={currentUser}
               />
 
               <MessageInput onSend={handleSendStatement} />

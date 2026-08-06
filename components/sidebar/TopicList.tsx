@@ -1,18 +1,20 @@
 'use client';
 
 import React, { useState } from 'react';
-import { TopicWithPreview } from '@/lib/types';
+import { TopicWithPreview, Profile } from '@/lib/types';
 import { TopicCard } from './TopicCard';
 import { TopicListSkeleton } from '../ui/Skeletons';
 import { EmptyState } from '../ui/EmptyState';
-import { Search, Plus, X, NotebookPen } from 'lucide-react';
+import { Search, Plus, X, LogOut, Users, MessageSquarePlus, MessageSquare } from 'lucide-react';
 
 interface TopicListProps {
   topics: TopicWithPreview[];
   activeTopicId: string | null;
   onSelectTopic: (topic: TopicWithPreview) => void;
-  onCreateTopic: (title: string) => Promise<void> | void;
+  onCreateTopic: (title: string, isGroup: boolean, memberUsernames?: string[]) => Promise<void> | void;
   isLoading: boolean;
+  onSignOut?: () => void;
+  currentProfile?: Profile | null;
 }
 
 export function TopicList({
@@ -21,14 +23,29 @@ export function TopicList({
   onSelectTopic,
   onCreateTopic,
   isLoading,
+  onSignOut,
+  currentProfile,
 }: TopicListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [newTopicTitle, setNewTopicTitle] = useState('');
+  const [creationMode, setCreationMode] = useState<'dm' | 'group'>('dm');
+  
+  // DM form fields
+  const [peerUsername, setPeerUsername] = useState('');
+  
+  // Group form fields
+  const [groupName, setGroupName] = useState('');
+  const [groupMembersText, setGroupMembersText] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredTopics = topics.filter((topic) => {
-    const titleMatch = topic.title.toLowerCase().includes(searchQuery.toLowerCase());
+    // Search in topic title
+    const title = topic.is_group 
+      ? topic.title 
+      : (topic.dm_peer?.display_name || topic.dm_peer?.username || topic.title);
+    
+    const titleMatch = title.toLowerCase().includes(searchQuery.toLowerCase());
     const previewMatch = topic.lastStatementPreview
       ?.toLowerCase()
       .includes(searchQuery.toLowerCase());
@@ -37,12 +54,27 @@ export function TopicList({
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTopicTitle.trim() || isSubmitting) return;
+    if (isSubmitting) return;
 
     try {
       setIsSubmitting(true);
-      await onCreateTopic(newTopicTitle.trim());
-      setNewTopicTitle('');
+      if (creationMode === 'dm') {
+        if (!peerUsername.trim()) return;
+        const cleanedPeer = peerUsername.trim().toLowerCase();
+        // Title defaults to peer username, isGroup = false, members = [peerUsername]
+        await onCreateTopic(cleanedPeer, false, [cleanedPeer]);
+        setPeerUsername('');
+      } else {
+        if (!groupName.trim()) return;
+        const membersList = groupMembersText
+          .split(',')
+          .map((m) => m.trim().toLowerCase())
+          .filter((m) => m.length > 0);
+        // Title = groupName, isGroup = true, members = membersList
+        await onCreateTopic(groupName.trim(), true, membersList);
+        setGroupName('');
+        setGroupMembersText('');
+      }
       setIsCreating(false);
     } finally {
       setIsSubmitting(false);
@@ -51,61 +83,135 @@ export function TopicList({
 
   return (
     <div className="flex flex-col h-full bg-[#202C33] border-r border-[#2A3942]">
-      {/* Top Header */}
-      <div className="p-4 bg-[#202C33] border-b border-[#2A3942] space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#00A884] flex items-center justify-center text-white shadow-md shadow-[#00A884]/20">
-              <NotebookPen className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-[#E9EDEF]">rucked</h1>
-            </div>
+      {/* User Profile / Status Bar */}
+      <div className="p-3 bg-[#202C33] flex items-center justify-between border-b border-[#2A3942]">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-[#00A884]/20 flex items-center justify-center border border-[#00A884]/30 text-[#00A884] font-extrabold text-lg select-none">
+            {currentProfile?.display_name?.[0]?.toUpperCase() || currentProfile?.username?.[0]?.toUpperCase() || 'U'}
           </div>
-
-          <button
-            onClick={() => setIsCreating(true)}
-            className="p-2 rounded-xl bg-[#00A884] hover:bg-[#008f70] text-white font-medium text-xs flex items-center gap-1.5 transition-all shadow-md hover:shadow-[#00A884]/20 cursor-pointer"
-            title="New Topic"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">New Topic</span>
-          </button>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-[#E9EDEF] truncate">
+              {currentProfile?.display_name || 'Loading user...'}
+            </h2>
+            <p className="text-[11px] text-[#8696A0] truncate">
+              @{currentProfile?.username || 'user'}
+            </p>
+          </div>
         </div>
 
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setIsCreating(true)}
+            className="p-2 rounded-lg text-[#8696A0] hover:text-[#00A884] hover:bg-[#111B21]/50 transition-all cursor-pointer"
+            title="New Chat"
+          >
+            <MessageSquarePlus className="w-5 h-5" />
+          </button>
+          
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              className="p-2 rounded-lg text-[#8696A0] hover:text-red-400 hover:bg-[#111B21]/50 transition-all cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Action Bar (Search & Dynamic Create Form) */}
+      <div className="p-3.5 space-y-3 border-b border-[#2A3942]">
+        
         {/* Inline Create Form */}
         {isCreating && (
           <form
             onSubmit={handleCreateSubmit}
-            className="p-2.5 bg-[#111B21] border border-[#00A884] rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2 duration-150"
+            className="p-3 bg-[#111B21] border border-[#00A884]/60 rounded-xl space-y-3 animate-in fade-in slide-in-from-top-2 duration-150 shadow-lg"
           >
-            <div className="flex items-center justify-between text-xs text-[#00A884] font-semibold">
-              <span>Create New Topic</span>
+            {/* Header Tabs */}
+            <div className="flex items-center justify-between">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreationMode('dm')}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                    creationMode === 'dm'
+                      ? 'bg-[#202C33] text-[#00A884] border border-[#00A884]/30'
+                      : 'text-[#8696A0] hover:text-[#E9EDEF]'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> Direct DM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreationMode('group')}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                    creationMode === 'group'
+                      ? 'bg-[#202C33] text-[#00A884] border border-[#00A884]/30'
+                      : 'text-[#8696A0] hover:text-[#E9EDEF]'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" /> Group Chat
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                className="text-[#8696A0] hover:text-[#E9EDEF]"
+                className="text-[#8696A0] hover:text-[#E9EDEF] p-1 rounded-lg hover:bg-[#202C33]/50"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newTopicTitle}
-                onChange={(e) => setNewTopicTitle(e.target.value)}
-                placeholder="Topic name (e.g., Docker, Daily Notes)..."
-                autoFocus
-                className="flex-1 bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-1.5 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
-              />
-              <button
-                type="submit"
-                disabled={isSubmitting || !newTopicTitle.trim()}
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-[#00A884] hover:bg-[#008f70] rounded-lg transition-colors disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
+
+            {creationMode === 'dm' ? (
+              // Direct Message Inputs
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  required
+                  value={peerUsername}
+                  onChange={(e) => setPeerUsername(e.target.value)}
+                  placeholder="Enter user handle/username (e.g. john)"
+                  autoFocus
+                  className="w-full bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
+                />
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !peerUsername.trim()}
+                  className="w-full py-1.5 text-xs font-bold text-white bg-[#00A884] hover:bg-[#008f70] rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Start Chat
+                </button>
+              </div>
+            ) : (
+              // Group Chat Inputs
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  required
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  placeholder="Group Name (e.g. Project Alpha)"
+                  autoFocus
+                  className="w-full bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
+                />
+                <input
+                  type="text"
+                  value={groupMembersText}
+                  onChange={(e) => setGroupMembersText(e.target.value)}
+                  placeholder="Members (comma-separated usernames)..."
+                  className="w-full bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
+                />
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !groupName.trim()}
+                  className="w-full py-1.5 text-xs font-bold text-white bg-[#00A884] hover:bg-[#008f70] rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Create Group
+                </button>
+              </div>
+            )}
           </form>
         )}
 
@@ -116,7 +222,7 @@ export function TopicList({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search topics or notes..."
+            placeholder="Search chats or messages..."
             className="w-full bg-[#111B21] border border-[#2A3942] rounded-xl pl-9 pr-8 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884] transition-colors"
           />
           {searchQuery && (
@@ -138,7 +244,7 @@ export function TopicList({
           <EmptyState type="no-topics" onCreateTopic={() => setIsCreating(true)} />
         ) : filteredTopics.length === 0 ? (
           <div className="text-center py-12 px-4 space-y-2">
-            <p className="text-sm font-medium text-[#E9EDEF]">No matching topics</p>
+            <p className="text-sm font-medium text-[#E9EDEF]">No matching chats</p>
             <p className="text-xs text-[#8696A0]">Try searching for another keyword.</p>
           </div>
         ) : (

@@ -7,16 +7,27 @@ import { Edit2, Trash2, Check, X } from 'lucide-react';
 
 interface MessageBubbleProps {
   statement: Statement;
+  isOwn?: boolean;
+  showSenderName?: boolean;
   onEdit: (statementId: string, newContent: string) => Promise<void> | void;
   onDelete: (statementId: string) => Promise<void> | void;
 }
 
-export function MessageBubble({ statement, onEdit, onDelete }: MessageBubbleProps) {
+export function MessageBubble({
+  statement,
+  isOwn = true,
+  showSenderName = false,
+  onEdit,
+  onDelete,
+}: MessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(statement.content);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const timestamp = formatStatementTimestamp(statement.created_at);
+
+  const senderName =
+    statement.sender?.display_name || statement.sender?.username || 'Unknown';
 
   const handleSaveEdit = async () => {
     if (!editContent.trim() || isSubmitting) return;
@@ -40,11 +51,24 @@ export function MessageBubble({ statement, onEdit, onDelete }: MessageBubbleProp
   };
 
   return (
-    <div className="flex justify-start mb-3 group animate-in fade-in duration-150">
-      <div className="relative max-w-[88%] sm:max-w-[75%] bg-[#202C33] text-[#E9EDEF] border border-[#2A3942]/60 rounded-2xl rounded-tl-xs p-3.5 shadow-md space-y-1.5 transition-all hover:border-[#2A3942]">
-        {/* Actions Dropdown / Hover Buttons */}
-        {!isEditing && (
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-[#111B21]/90 rounded-lg p-1 border border-[#2A3942] backdrop-blur-xs">
+    <div className={`flex mb-1.5 group animate-in fade-in duration-150 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`relative max-w-[88%] sm:max-w-[72%] rounded-2xl p-3 shadow-md space-y-1.5 transition-all ${
+          isOwn
+            ? 'bg-[#005C4B] text-[#E9EDEF] border border-[#006052]/60 rounded-tr-xs'
+            : 'bg-[#202C33] text-[#E9EDEF] border border-[#2A3942]/60 rounded-tl-xs hover:border-[#2A3942]'
+        }`}
+      >
+        {/* Sender Name (shown in group for non-own messages) */}
+        {showSenderName && (
+          <p className="text-[11px] font-semibold text-[#00A884] mb-1 -mt-0.5">
+            {senderName}
+          </p>
+        )}
+
+        {/* Actions (only for own messages) */}
+        {isOwn && !isEditing && (
+          <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-[#111B21]/90 rounded-lg p-1 border border-[#2A3942] backdrop-blur-xs">
             <button
               onClick={() => {
                 setEditContent(statement.content);
@@ -96,16 +120,17 @@ export function MessageBubble({ statement, onEdit, onDelete }: MessageBubbleProp
             </div>
           </div>
         ) : (
-          <div className="text-sm font-normal text-[#E9EDEF] whitespace-pre-wrap leading-relaxed break-words pr-8">
+          <div className={`text-sm font-normal text-[#E9EDEF] whitespace-pre-wrap leading-relaxed break-words ${isOwn ? 'pl-1' : 'pr-8'}`}>
             {statement.content}
           </div>
         )}
 
         {/* Timestamp */}
-        <div className="flex justify-end items-center gap-1.5 text-[10px] text-[#8696A0] pt-1">
+        <div className={`flex items-center gap-1.5 text-[10px] text-[#8696A0] pt-0.5 ${isOwn ? 'justify-start' : 'justify-end'}`}>
           <span>{timestamp}</span>
         </div>
       </div>
     </div>
   );
 }
+
