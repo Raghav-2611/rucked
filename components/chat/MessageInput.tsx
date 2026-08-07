@@ -44,7 +44,10 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
   };
 
   return (
-    <div className="p-3 bg-[#202C33] border-t border-[#2A3942] z-10">
+    <div
+      className="p-3 bg-[#202C33] border-t border-[#2A3942] z-10"
+      style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+    >
       <div className="max-w-4xl mx-auto flex items-end gap-2 bg-[#111B21] border border-[#2A3942] focus-within:border-[#00A884] rounded-2xl px-4 py-2 transition-colors">
         <textarea
           ref={textareaRef}

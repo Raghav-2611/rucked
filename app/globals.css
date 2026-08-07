@@ -22,10 +22,17 @@ html, body {
   background-color: #111B21;
   color: #E9EDEF;
   height: 100%;
+  /* Use dynamic viewport height on mobile so browser chrome is accounted for */
+  height: 100dvh;
   margin: 0;
   padding: 0;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Ensure the root app div also uses dynamic viewport height */
+#__next, [data-nextjs-scroll-focus-boundary] {
+  height: 100dvh;
 }
 
 /* Custom Scrollbar */
