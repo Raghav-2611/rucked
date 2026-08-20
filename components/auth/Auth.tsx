@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, getURL } from '@/lib/supabase';
 import { NotebookPen, Key, Mail, User, ShieldAlert, Loader2 } from 'lucide-react';
 
 interface AuthProps {
@@ -76,7 +76,7 @@ export function Auth({ onAuthSuccess }: AuthProps) {
       const { error: googleError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}`,
+          redirectTo: `${getURL()}auth/callback`,
         },
       });
       if (googleError) throw googleError;
