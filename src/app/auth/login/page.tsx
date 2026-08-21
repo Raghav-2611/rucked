@@ -1,4 +1,6 @@
-import React from 'react';
+// src/app/auth/login/page.tsx
+"use client";
+
 import { supabase, getURL, isSupabaseConfigured } from '@/lib/supabase';
 
 export default function LoginPage() {
