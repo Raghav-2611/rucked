@@ -13,7 +13,6 @@ interface TopicListProps {
   onSelectTopic: (topic: TopicWithPreview) => void;
   onCreateTopic: (title: string, isGroup: boolean, memberUsernames?: string[]) => Promise<void> | void;
   isLoading: boolean;
-  onSignOut?: () => void;
   currentProfile?: Profile | null;
 }
 
@@ -23,7 +22,6 @@ export function TopicList({
   onSelectTopic,
   onCreateTopic,
   isLoading,
-  onSignOut,
   currentProfile,
 }: TopicListProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,16 +105,6 @@ export function TopicList({
           >
             <MessageSquarePlus className="w-5 h-5" />
           </button>
-          
-          {onSignOut && (
-            <button
-              onClick={onSignOut}
-              className="p-2 rounded-lg text-[#8696A0] hover:text-red-400 hover:bg-[#111B21]/50 transition-all cursor-pointer"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          )}
         </div>
       </div>
 
