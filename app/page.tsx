@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -10,17 +10,17 @@ import { MessageInput } from '@/components/chat/MessageInput';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { RenameModal } from '@/components/ui/RenameModal';
-import { ConfigBanner } from '@/components/ui/ConfigBanner';
+
+// ─── Demo fallback data (used only when Supabase is not configured) ───────────
 
 const MOCK_PROFILE: Profile = {
   id: '00000000-0000-0000-0000-000000000000',
   username: 'guest',
   display_name: 'Guest User',
   avatar_url: null,
-  created_at: new Date().toISOString()
+  created_at: new Date().toISOString(),
 };
 
-// Mock initial data for local demo mode when env vars aren't set
 const INITIAL_DEMO_TOPICS: Topic[] = [
   {
     id: 'demo-1',
@@ -62,129 +62,121 @@ const INITIAL_DEMO_STATEMENTS: Statement[] = [
   },
 ];
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function HomePage() {
-  const [hasSupabase, setHasSupabase] = useState<boolean>(true);
+  const hasSupabase = isSupabaseConfigured();
   const [currentProfile] = useState<Profile>(MOCK_PROFILE);
 
   const [topics, setTopics] = useState<TopicWithPreview[]>([]);
   const [activeTopic, setActiveTopic] = useState<TopicWithPreview | null>(null);
   const [statements, setStatements] = useState<Statement[]>([]);
-  
-  // UI states
+
+  // UI state
   const [isLoadingTopics, setIsLoadingTopics] = useState<boolean>(true);
   const [isLoadingStatements, setIsLoadingStatements] = useState<boolean>(false);
   const [showMobileChat, setShowMobileChat] = useState<boolean>(false);
 
-  // Modals state
+  // Modals
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isProcessingModal, setIsProcessingModal] = useState(false);
 
-  // Fallback demo storage
+  // Demo-only local state (used when Supabase is not configured)
   const [demoTopics, setDemoTopics] = useState<Topic[]>(INITIAL_DEMO_TOPICS);
   const [demoStatements, setDemoStatements] = useState<Statement[]>(INITIAL_DEMO_STATEMENTS);
 
-  useEffect(() => {
-    const configured = isSupabaseConfigured();
-    setHasSupabase(configured);
-  }, []);
+  // ─── Fetch Topics ───────────────────────────────────────────────────────────
 
-  // Fetch Topics and calculate previews & counts
   const fetchTopics = useCallback(async () => {
     setIsLoadingTopics(true);
-    try {
-      if (hasSupabase) {
-        // Query topics directly
-        const { data: topicsData, error: topicsError } = await supabase
-          .from('topics')
-          .select('*')
-          .order('created_at', { ascending: false });
 
-        if (topicsError) throw topicsError;
+    if (hasSupabase) {
+      // 1. Fetch all topics
+      const { data: topicsData, error: topicsError } = await supabase
+        .from('topics')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-        if (topicsData && topicsData.length > 0) {
-          // Fetch latest statements for each topic preview
-          const { data: stmtsData } = await supabase
+      if (topicsError) {
+        console.error('Error fetching topics:', topicsError);
+        setIsLoadingTopics(false);
+        return;
+      }
+
+      // 2. For each topic, fetch the most recent statement for preview + count
+      const enhanced: TopicWithPreview[] = await Promise.all(
+        (topicsData || []).map(async (t: Topic) => {
+          const { data: stmts } = await supabase
             .from('statements')
-            .select('*')
-            .order('created_at', { ascending: true });
+            .select('content, created_at')
+            .eq('topic_id', t.id)
+            .order('created_at', { ascending: false })
+            .limit(1);
 
-          const enhancedTopics: TopicWithPreview[] = topicsData.map((t: Topic) => {
-            const topicStmts = (stmtsData || []).filter((s: Statement) => s.topic_id === t.id);
-            const lastStmt = topicStmts[topicStmts.length - 1];
+          const { count } = await supabase
+            .from('statements')
+            .select('id', { count: 'exact', head: true })
+            .eq('topic_id', t.id);
 
-            return {
-              ...t,
-              statementCount: topicStmts.length,
-              lastStatementPreview: lastStmt ? lastStmt.content : undefined,
-              lastActivityAt: lastStmt ? lastStmt.created_at : t.created_at,
-              members: [],
-              dm_peer: null
-            };
-          });
-
-          // Sort by latest activity
-          enhancedTopics.sort((a, b) => {
-            const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
-            const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
-            return timeB - timeA;
-          });
-
-          setTopics(enhancedTopics);
-          
-          if (activeTopic) {
-            const updatedActive = enhancedTopics.find(t => t.id === activeTopic.id);
-            if (updatedActive) {
-              setActiveTopic(updatedActive);
-            } else {
-              setActiveTopic(enhancedTopics[0] || null);
-            }
-          } else if (enhancedTopics.length > 0) {
-            setActiveTopic(enhancedTopics[0]);
-          }
-        } else {
-          setTopics([]);
-          setActiveTopic(null);
-        }
-      } else {
-        // Fallback demo mode
-        const enhancedTopics: TopicWithPreview[] = demoTopics.map((t) => {
-          const topicStmts = demoStatements.filter((s) => s.topic_id === t.id);
-          const lastStmt = topicStmts[topicStmts.length - 1];
+          const lastStmt = stmts?.[0];
           return {
             ...t,
-            statementCount: topicStmts.length,
-            lastStatementPreview: lastStmt ? lastStmt.content : undefined,
-            lastActivityAt: lastStmt ? lastStmt.created_at : t.created_at,
+            statementCount: count ?? 0,
+            lastStatementPreview: lastStmt?.content,
+            lastActivityAt: lastStmt?.created_at ?? t.created_at,
+            members: [],
+            dm_peer: null,
           };
-        });
+        })
+      );
 
-        enhancedTopics.sort((a, b) => {
-          const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
-          const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
-          return timeB - timeA;
-        });
+      // Sort by last activity
+      enhanced.sort((a, b) => {
+        const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
+        const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
+        return timeB - timeA;
+      });
 
-        setTopics(enhancedTopics);
-        if (!activeTopic && enhancedTopics.length > 0) {
-          setActiveTopic(enhancedTopics[0]);
-        }
-      }
-    } catch (err: any) {
-      console.error('Error fetching topics:', err?.message || JSON.stringify(err));
-    } finally {
-      setIsLoadingTopics(false);
+      setTopics(enhanced);
+      if (!activeTopic && enhanced.length > 0) setActiveTopic(enhanced[0]);
+    } else {
+      // Demo fallback
+      const enhancedTopics: TopicWithPreview[] = demoTopics.map((t) => {
+        const topicStmts = demoStatements.filter((s) => s.topic_id === t.id);
+        const lastStmt = topicStmts[topicStmts.length - 1];
+        return {
+          ...t,
+          statementCount: topicStmts.length,
+          lastStatementPreview: lastStmt?.content,
+          lastActivityAt: lastStmt?.created_at ?? t.created_at,
+          members: [],
+          dm_peer: null,
+        };
+      });
+      enhancedTopics.sort((a, b) => {
+        const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
+        const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
+        return timeB - timeA;
+      });
+      setTopics(enhancedTopics);
+      if (!activeTopic && enhancedTopics.length > 0) setActiveTopic(enhancedTopics[0]);
     }
-  }, [hasSupabase, activeTopic, demoTopics, demoStatements]);
+
+    setIsLoadingTopics(false);
+  }, [hasSupabase, demoTopics, demoStatements, activeTopic]);
 
   useEffect(() => {
     fetchTopics();
-  }, [hasSupabase, fetchTopics]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSupabase]);
 
-  // Fetch Statements for Active Topic
-  const fetchStatements = useCallback(async (topicId: string) => {
-    setIsLoadingStatements(true);
-    try {
+  // ─── Fetch Statements ───────────────────────────────────────────────────────
+
+  const fetchStatements = useCallback(
+    async (topicId: string) => {
+      setIsLoadingStatements(true);
+
       if (hasSupabase) {
         const { data, error } = await supabase
           .from('statements')
@@ -192,8 +184,11 @@ export default function HomePage() {
           .eq('topic_id', topicId)
           .order('created_at', { ascending: true });
 
-        if (error) throw error;
-        setStatements((data as Statement[]) || []);
+        if (error) {
+          console.error('Error fetching statements:', error);
+        } else {
+          setStatements(data || []);
+        }
       } else {
         const stmts = demoStatements.filter((s) => s.topic_id === topicId);
         stmts.sort(
@@ -201,285 +196,266 @@ export default function HomePage() {
         );
         setStatements(stmts);
       }
-    } catch (err: any) {
-      console.error('Error fetching statements:', err?.message || JSON.stringify(err));
-    } finally {
+
       setIsLoadingStatements(false);
-    }
-  }, [hasSupabase, demoStatements]);
+    },
+    [hasSupabase, demoStatements]
+  );
 
   useEffect(() => {
-    if (activeTopic) {
-      fetchStatements(activeTopic.id);
-    } else {
-      setStatements([]);
-    }
-  }, [activeTopic]);
+    if (activeTopic) fetchStatements(activeTopic.id);
+    else setStatements([]);
+  }, [activeTopic, fetchStatements]);
 
-  // Handle Select Topic
+  // ─── Handlers ───────────────────────────────────────────────────────────────
+
   const handleSelectTopic = (topic: TopicWithPreview) => {
     setActiveTopic(topic);
     setShowMobileChat(true);
   };
 
-  // Create Topic (Group or DM)
-  const handleCreateTopic = async (title: string, isGroup: boolean = false, memberUsernames: string[] = []) => {
-    try {
-      if (hasSupabase) {
-        // 1. Create topic
-        const { data: topicData, error: topicError } = await supabase
-          .from('topics')
-          .insert([{ title }])
-          .select()
-          .single();
+  const handleCreateTopic = async (
+    title: string,
+    isGroup: boolean = false,
+    _memberUsernames: string[] = []
+  ) => {
+    if (hasSupabase) {
+      const { data, error } = await supabase
+        .from('topics')
+        .insert([{ title, is_group: isGroup }])
+        .select()
+        .single();
 
-        if (topicError) throw topicError;
-        if (topicData) {
-          // Reload topics
-          await fetchTopics();
-          
-          // Switch to new topic (will resolve correctly in state after fetch)
-          const newTopicObj: TopicWithPreview = {
-            ...topicData,
-            statementCount: 0,
-            lastActivityAt: topicData.created_at,
-            members: []
-          };
-          setActiveTopic(newTopicObj);
-          setShowMobileChat(true);
-        }
-      } else {
-        // Fallback demo mode
-        const newTopic: Topic = {
-          id: `demo-${Date.now()}`,
-          title,
-          created_at: new Date().toISOString(),
-          is_group: isGroup,
-          created_by: null,
-        };
-        setDemoTopics((prev) => [newTopic, ...prev]);
-        const enhanced: TopicWithPreview = {
-          ...newTopic,
-          statementCount: 0,
-          lastActivityAt: newTopic.created_at,
-          members: [],
-          dm_peer: null
-        };
-        setActiveTopic(enhanced);
-        setShowMobileChat(true);
+      if (error) {
+        console.error('Error creating topic:', error);
+        return;
       }
-    } catch (err: any) {
-      console.error('Error creating topic:', err?.message || JSON.stringify(err));
+
+      const newEnhanced: TopicWithPreview = {
+        ...data,
+        statementCount: 0,
+        lastActivityAt: data.created_at,
+        members: [],
+        dm_peer: null,
+      };
+      setTopics((prev) => [newEnhanced, ...prev]);
+      setActiveTopic(newEnhanced);
+    } else {
+      const newTopic: Topic = {
+        id: `demo-${Date.now()}`,
+        title,
+        created_at: new Date().toISOString(),
+        is_group: isGroup,
+        created_by: null,
+      };
+      setDemoTopics((prev) => [newTopic, ...prev]);
+      const enhanced: TopicWithPreview = {
+        ...newTopic,
+        statementCount: 0,
+        lastActivityAt: newTopic.created_at,
+        members: [],
+        dm_peer: null,
+      };
+      setTopics((prev) => [enhanced, ...prev]);
+      setActiveTopic(enhanced);
     }
+    setShowMobileChat(true);
   };
 
-  // Rename Topic
   const handleSaveRename = async (newTitle: string) => {
     if (!activeTopic) return;
-    try {
-      setIsProcessingModal(true);
-      if (hasSupabase) {
-        const { error } = await supabase
-          .from('topics')
-          .update({ title: newTitle })
-          .eq('id', activeTopic.id);
+    setIsProcessingModal(true);
 
-        if (error) throw error;
-      } else {
-        setDemoTopics((prev) =>
-          prev.map((t) => (t.id === activeTopic.id ? { ...t, title: newTitle } : t))
-        );
+    if (hasSupabase) {
+      const { error } = await supabase
+        .from('topics')
+        .update({ title: newTitle })
+        .eq('id', activeTopic.id);
+
+      if (error) {
+        console.error('Error renaming topic:', error);
+        setIsProcessingModal(false);
+        return;
       }
-
-      setActiveTopic((prev) => (prev ? { ...prev, title: newTitle } : null));
-      setTopics((prev) =>
+    } else {
+      setDemoTopics((prev) =>
         prev.map((t) => (t.id === activeTopic.id ? { ...t, title: newTitle } : t))
       );
-      setIsRenameModalOpen(false);
-    } catch (err: any) {
-      console.error('Error renaming topic:', err?.message || JSON.stringify(err));
-    } finally {
-      setIsProcessingModal(false);
     }
+
+    setActiveTopic((prev) => (prev ? { ...prev, title: newTitle } : null));
+    setTopics((prev) =>
+      prev.map((t) => (t.id === activeTopic.id ? { ...t, title: newTitle } : t))
+    );
+    setIsRenameModalOpen(false);
+    setIsProcessingModal(false);
   };
 
-  // Delete Topic
   const handleConfirmDeleteTopic = async () => {
     if (!activeTopic) return;
-    try {
-      setIsProcessingModal(true);
-      if (hasSupabase) {
-        const { error } = await supabase
-          .from('topics')
-          .delete()
-          .eq('id', activeTopic.id);
+    setIsProcessingModal(true);
 
-        if (error) throw error;
-      } else {
-        setDemoTopics((prev) => prev.filter((t) => t.id !== activeTopic.id));
-        setDemoStatements((prev) => prev.filter((s) => s.topic_id !== activeTopic.id));
+    if (hasSupabase) {
+      const { error } = await supabase
+        .from('topics')
+        .delete()
+        .eq('id', activeTopic.id);
+
+      if (error) {
+        console.error('Error deleting topic:', error);
+        setIsProcessingModal(false);
+        return;
       }
-
-      const remaining = topics.filter((t) => t.id !== activeTopic.id);
-      setTopics(remaining);
-      setActiveTopic(remaining.length > 0 ? remaining[0] : null);
-      setIsDeleteModalOpen(false);
-      setShowMobileChat(false);
-    } catch (err: any) {
-      console.error('Error deleting topic:', err?.message || JSON.stringify(err));
-    } finally {
-      setIsProcessingModal(false);
+    } else {
+      setDemoTopics((prev) => prev.filter((t) => t.id !== activeTopic.id));
+      setDemoStatements((prev) => prev.filter((s) => s.topic_id !== activeTopic.id));
     }
+
+    const remaining = topics.filter((t) => t.id !== activeTopic.id);
+    setTopics(remaining);
+    setActiveTopic(remaining.length > 0 ? remaining[0] : null);
+    setIsDeleteModalOpen(false);
+    setShowMobileChat(false);
+    setIsProcessingModal(false);
   };
 
-  // Send Statement
   const handleSendStatement = async (content: string) => {
     if (!activeTopic) return;
     const nowStr = new Date().toISOString();
 
-    try {
-      if (hasSupabase) {
-        const { data, error } = await supabase
-          .from('statements')
-          .insert([{ topic_id: activeTopic.id, content }])
-          .select()
-          .single();
+    if (hasSupabase) {
+      const { data, error } = await supabase
+        .from('statements')
+        .insert([{ topic_id: activeTopic.id, content }])
+        .select()
+        .single();
 
-        if (error) throw error;
-        if (data) {
-          setStatements((prev) => [...prev, data as Statement]);
-          
-          // Update topic preview and order
-          setTopics((prev) => {
-            const updated = prev.map((t) => {
-              if (t.id === activeTopic.id) {
-                return {
+      if (error) {
+        console.error('Error sending statement:', error);
+        return;
+      }
+
+      setStatements((prev) => [...prev, data]);
+      setTopics((prev) =>
+        prev
+          .map((t) =>
+            t.id === activeTopic.id
+              ? {
+                  ...t,
+                  statementCount: (t.statementCount || 0) + 1,
+                  lastStatementPreview: content,
+                  lastActivityAt: data.created_at,
+                }
+              : t
+          )
+          .sort((a, b) => {
+            const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
+            const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
+            return timeB - timeA;
+          })
+      );
+    } else {
+      const newStmt: Statement = {
+        id: `stmt-${Date.now()}`,
+        topic_id: activeTopic.id,
+        content,
+        created_at: nowStr,
+        sender_id: 'demo-user-1',
+      };
+      setDemoStatements((prev) => [...prev, newStmt]);
+      setStatements((prev) => [...prev, newStmt]);
+      setTopics((prev) =>
+        prev
+          .map((t) =>
+            t.id === activeTopic.id
+              ? {
                   ...t,
                   statementCount: (t.statementCount || 0) + 1,
                   lastStatementPreview: content,
                   lastActivityAt: nowStr,
-                };
-              }
-              return t;
-            });
-            return updated.sort((a, b) => {
-              const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
-              const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
-              return timeB - timeA;
-            });
-          });
-        }
-      } else {
-        const newStmt: Statement = {
-          id: `stmt-${Date.now()}`,
-          topic_id: activeTopic.id,
-          content,
-          created_at: nowStr,
-          sender_id: 'demo-user-1',
-        };
-        setDemoStatements((prev) => [...prev, newStmt]);
-        setStatements((prev) => [...prev, newStmt]);
-
-        setTopics((prev) => {
-          const updated = prev.map((t) => {
-            if (t.id === activeTopic.id) {
-              return {
-                ...t,
-                statementCount: (t.statementCount || 0) + 1,
-                lastStatementPreview: content,
-                lastActivityAt: nowStr,
-              };
-            }
-            return t;
-          });
-          return updated.sort((a, b) => {
+                }
+              : t
+          )
+          .sort((a, b) => {
             const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
             const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
             return timeB - timeA;
-          });
-        });
-      }
-    } catch (err: any) {
-      console.error('Error sending statement:', err?.message || JSON.stringify(err));
+          })
+      );
     }
   };
 
-  // Edit Statement
   const handleEditStatement = async (statementId: string, newContent: string) => {
-    try {
-      if (hasSupabase) {
-        const { error } = await supabase
-          .from('statements')
-          .update({ content: newContent })
-          .eq('id', statementId);
+    if (hasSupabase) {
+      const { error } = await supabase
+        .from('statements')
+        .update({ content: newContent })
+        .eq('id', statementId);
 
-        if (error) throw error;
-      } else {
-        setDemoStatements((prev) =>
-          prev.map((s) => (s.id === statementId ? { ...s, content: newContent } : s))
-        );
+      if (error) {
+        console.error('Error editing statement:', error);
+        return;
       }
-
-      setStatements((prev) =>
+    } else {
+      setDemoStatements((prev) =>
         prev.map((s) => (s.id === statementId ? { ...s, content: newContent } : s))
       );
+    }
 
-      // Update topic preview if edited statement was the last one
-      if (statements[statements.length - 1]?.id === statementId && activeTopic) {
-        setTopics((prev) =>
-          prev.map((t) =>
-            t.id === activeTopic.id ? { ...t, lastStatementPreview: newContent } : t
-          )
-        );
-      }
-    } catch (err: any) {
-      console.error('Error editing statement:', err?.message || JSON.stringify(err));
+    setStatements((prev) =>
+      prev.map((s) => (s.id === statementId ? { ...s, content: newContent } : s))
+    );
+
+    // Update sidebar preview if it was the last statement
+    if (statements[statements.length - 1]?.id === statementId && activeTopic) {
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === activeTopic.id ? { ...t, lastStatementPreview: newContent } : t
+        )
+      );
     }
   };
 
-  // Delete Statement
   const handleDeleteStatement = async (statementId: string) => {
     if (!activeTopic) return;
-    try {
-      if (hasSupabase) {
-        const { error } = await supabase
-          .from('statements')
-          .delete()
-          .eq('id', statementId);
 
-        if (error) throw error;
-      } else {
-        setDemoStatements((prev) => prev.filter((s) => s.id !== statementId));
+    if (hasSupabase) {
+      const { error } = await supabase
+        .from('statements')
+        .delete()
+        .eq('id', statementId);
+
+      if (error) {
+        console.error('Error deleting statement:', error);
+        return;
       }
+    } else {
+      setDemoStatements((prev) => prev.filter((s) => s.id !== statementId));
+    }
 
-      const updatedStmts = statements.filter((s) => s.id !== statementId);
-      setStatements(updatedStmts);
-
-      const lastStmt = updatedStmts[updatedStmts.length - 1];
-      setTopics((prev) =>
-        prev.map((t) => {
-          if (t.id === activeTopic.id) {
-            return {
+    const updatedStmts = statements.filter((s) => s.id !== statementId);
+    setStatements(updatedStmts);
+    const lastStmt = updatedStmts[updatedStmts.length - 1];
+    setTopics((prev) =>
+      prev.map((t) =>
+        t.id === activeTopic.id
+          ? {
               ...t,
               statementCount: Math.max(0, (t.statementCount || 1) - 1),
-              lastStatementPreview: lastStmt ? lastStmt.content : undefined,
-            };
-          }
-          return t;
-        })
-      );
-    } catch (err: any) {
-      console.error('Error deleting statement:', err?.message || JSON.stringify(err));
-    }
+              lastStatementPreview: lastStmt?.content,
+            }
+          : t
+      )
+    );
   };
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#111B21]">
-      {!hasSupabase && <ConfigBanner />}
-
       {/* Main Dual-Pane Workspace */}
       <div className="flex-1 flex w-full h-full overflow-hidden">
-        {/* Left Sidebar (30% Desktop / Full Mobile when active) */}
+        {/* Left Sidebar */}
         <div
           className={`w-full md:w-[30%] lg:w-[28%] xl:w-[25%] h-full shrink-0 ${
             showMobileChat ? 'hidden md:flex' : 'flex'
@@ -495,7 +471,7 @@ export default function HomePage() {
           />
         </div>
 
-        {/* Right Chat Area (70% Desktop / Full Mobile when active) */}
+        {/* Right Chat Area */}
         <div
           className={`w-full md:w-[70%] lg:w-[72%] xl:w-[75%] h-full flex flex-col bg-[#0B141A] ${
             !showMobileChat ? 'hidden md:flex' : 'flex'
@@ -538,7 +514,7 @@ export default function HomePage() {
         />
       )}
 
-      {/* Delete Topic Confirm Modal */}
+      {/* Delete Confirm Modal */}
       {activeTopic && (
         <ConfirmModal
           isOpen={isDeleteModalOpen}
