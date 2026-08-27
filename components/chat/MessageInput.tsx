@@ -1,19 +1,19 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { SendHorizonal } from 'lucide-react';
+import { SendHorizonal, Lock } from 'lucide-react';
 
 interface MessageInputProps {
   onSend: (content: string) => Promise<void> | void;
   disabled?: boolean;
+  disabledReason?: string;
 }
 
-export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
+export function MessageInput({ onSend, disabled = false, disabledReason }: MessageInputProps) {
   const [content, setContent] = useState('');
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea height up to a max
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -42,6 +42,20 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
       handleSend();
     }
   };
+
+  if (disabled) {
+    return (
+      <div
+        className="p-3 bg-[#202C33] border-t border-[#2A3942] z-10"
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      >
+        <div className="max-w-4xl mx-auto flex items-center justify-center gap-2 bg-[#111B21] border border-[#2A3942] rounded-2xl px-4 py-3 text-xs text-[#8696A0]">
+          <Lock className="w-4 h-4 text-yellow-400 shrink-0" />
+          <span>{disabledReason || 'You have read-only access to this topic.'}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -40,11 +40,11 @@ export default function AuthPage() {
 
     if (error) {
       setError(error.message);
+      setLoading(false);
     } else {
       router.push('/');
       router.refresh();
     }
-    setLoading(false);
   };
 
   // ─── Sign Up ────────────────────────────────────────────────────────────────
@@ -53,7 +53,6 @@ export default function AuthPage() {
     setError(null);
     setSuccess(null);
 
-    // Basic validation
     if (suPassword !== suConfirm) {
       setError('Passwords do not match.');
       return;
@@ -70,13 +69,12 @@ export default function AuthPage() {
 
     setLoading(true);
 
-    // 1. Sign up the user
+    // Sign up — username passed as metadata so the DB trigger picks it up
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: suEmail.trim(),
       password: suPassword,
       options: {
         data: { username: usernameClean, display_name: usernameClean },
-        // Email confirmation is disabled in Supabase dashboard
       },
     });
 
@@ -86,28 +84,14 @@ export default function AuthPage() {
       return;
     }
 
-    // 2. Insert profile row (username stored here)
-    if (data.user) {
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: data.user.id,
-        username: usernameClean,
-        display_name: usernameClean,
-      });
-
-      if (profileError && !profileError.message.includes('duplicate')) {
-        console.error('Profile insert error:', profileError);
-      }
-    }
-
-    setLoading(false);
-
     if (data.session) {
-      // Email confirmation disabled — session available immediately
+      // Email confirmation OFF — session ready, go to app
       router.push('/');
       router.refresh();
     } else {
-      // Email confirmation enabled — show message
-      setSuccess('Account created! Check your email to confirm your address, then sign in.');
+      // Email confirmation ON — prompt user to check inbox
+      setLoading(false);
+      setSuccess('Account created! Check your email to confirm, then sign in.');
       setTab('signin');
     }
   };
@@ -115,7 +99,6 @@ export default function AuthPage() {
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen w-screen flex items-center justify-center bg-[#111B21] px-4">
-      {/* Card */}
       <div className="w-full max-w-md">
         {/* Logo / Brand */}
         <div className="flex flex-col items-center mb-8 gap-3">
@@ -128,7 +111,7 @@ export default function AuthPage() {
           </div>
         </div>
 
-        {/* Card body */}
+        {/* Card */}
         <div className="bg-[#202C33] rounded-2xl border border-[#2A3942] overflow-hidden shadow-2xl">
           {/* Tabs */}
           <div className="flex border-b border-[#2A3942]">
@@ -148,7 +131,6 @@ export default function AuthPage() {
           </div>
 
           <div className="p-6">
-            {/* Error / Success banners */}
             {error && (
               <div className="mb-4 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
                 {error}
@@ -164,9 +146,7 @@ export default function AuthPage() {
             {tab === 'signin' && (
               <form onSubmit={handleSignIn} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">
-                    Email
-                  </label>
+                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">Email</label>
                   <input
                     id="signin-email"
                     type="email"
@@ -180,9 +160,7 @@ export default function AuthPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">
-                    Password
-                  </label>
+                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">Password</label>
                   <div className="relative">
                     <input
                       id="signin-password"
@@ -210,7 +188,7 @@ export default function AuthPage() {
                   disabled={loading}
                   className="mt-2 w-full py-3 rounded-xl bg-[#00A884] hover:bg-[#008f70] active:bg-[#007a5e] text-white font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                   {loading ? 'Signing in…' : 'Sign In'}
                 </button>
               </form>
@@ -220,9 +198,7 @@ export default function AuthPage() {
             {tab === 'signup' && (
               <form onSubmit={handleSignUp} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">
-                    Email
-                  </label>
+                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">Email</label>
                   <input
                     id="signup-email"
                     type="email"
@@ -236,9 +212,7 @@ export default function AuthPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">
-                    Username
-                  </label>
+                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">Username</label>
                   <input
                     id="signup-username"
                     type="text"
@@ -253,9 +227,7 @@ export default function AuthPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">
-                    Password
-                  </label>
+                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">Password</label>
                   <div className="relative">
                     <input
                       id="signup-password"
@@ -278,9 +250,7 @@ export default function AuthPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">
-                    Confirm Password
-                  </label>
+                  <label className="text-xs font-semibold text-[#8696A0] uppercase tracking-wider">Confirm Password</label>
                   <input
                     id="signup-confirm"
                     type="password"
@@ -299,7 +269,7 @@ export default function AuthPage() {
                   disabled={loading}
                   className="mt-2 w-full py-3 rounded-xl bg-[#00A884] hover:bg-[#008f70] active:bg-[#007a5e] text-white font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                   {loading ? 'Creating account…' : 'Create Account'}
                 </button>
               </form>

@@ -5,13 +5,13 @@ import { TopicWithPreview, Profile } from '@/lib/types';
 import { TopicCard } from './TopicCard';
 import { TopicListSkeleton } from '../ui/Skeletons';
 import { EmptyState } from '../ui/EmptyState';
-import { Search, Plus, X, LogOut, Users, MessageSquarePlus, MessageSquare } from 'lucide-react';
+import { Search, Plus, X, LogOut, MessageSquarePlus, FileText, UserPlus, Users } from 'lucide-react';
 
 interface TopicListProps {
   topics: TopicWithPreview[];
   activeTopicId: string | null;
   onSelectTopic: (topic: TopicWithPreview) => void;
-  onCreateTopic: (title: string, isGroup: boolean, memberUsernames?: string[]) => Promise<void> | void;
+  onCreateTopic: (title: string, isGroup?: boolean, memberUsernames?: string[]) => Promise<void> | void;
   isLoading: boolean;
   currentProfile?: Profile | null;
   onSignOut?: () => void;
@@ -28,7 +28,10 @@ export function TopicList({
 }: TopicListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [creationMode, setCreationMode] = useState<'dm' | 'group'>('dm');
+  const [creationMode, setCreationMode] = useState<'solo' | 'dm' | 'group'>('solo');
+  
+  // Solo topic field
+  const [soloTitle, setSoloTitle] = useState('');
   
   // DM form fields
   const [peerUsername, setPeerUsername] = useState('');
@@ -40,7 +43,6 @@ export function TopicList({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredTopics = topics.filter((topic) => {
-    // Search in topic title
     const title = topic.is_group 
       ? topic.title 
       : (topic.dm_peer?.display_name || topic.dm_peer?.username || topic.title);
@@ -58,10 +60,13 @@ export function TopicList({
 
     try {
       setIsSubmitting(true);
-      if (creationMode === 'dm') {
+      if (creationMode === 'solo') {
+        if (!soloTitle.trim()) return;
+        await onCreateTopic(soloTitle.trim(), false, []);
+        setSoloTitle('');
+      } else if (creationMode === 'dm') {
         if (!peerUsername.trim()) return;
         const cleanedPeer = peerUsername.trim().toLowerCase();
-        // Title defaults to peer username, isGroup = false, members = [peerUsername]
         await onCreateTopic(cleanedPeer, false, [cleanedPeer]);
         setPeerUsername('');
       } else {
@@ -70,7 +75,6 @@ export function TopicList({
           .split(',')
           .map((m) => m.trim().toLowerCase())
           .filter((m) => m.length > 0);
-        // Title = groupName, isGroup = true, members = membersList
         await onCreateTopic(groupName.trim(), true, membersList);
         setGroupName('');
         setGroupMembersText('');
@@ -103,7 +107,7 @@ export function TopicList({
           <button
             onClick={() => setIsCreating(true)}
             className="p-2 rounded-lg text-[#8696A0] hover:text-[#00A884] hover:bg-[#111B21]/50 transition-all cursor-pointer"
-            title="New Chat"
+            title="New Topic / Chat"
           >
             <MessageSquarePlus className="w-5 h-5" />
           </button>
@@ -130,28 +134,39 @@ export function TopicList({
           >
             {/* Header Tabs */}
             <div className="flex items-center justify-between">
-              <div className="flex gap-2">
+              <div className="flex gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setCreationMode('solo')}
+                  className={`text-[11px] font-semibold px-2 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                    creationMode === 'solo'
+                      ? 'bg-[#202C33] text-[#00A884] border border-[#00A884]/30'
+                      : 'text-[#8696A0] hover:text-[#E9EDEF]'
+                  }`}
+                >
+                  <FileText className="w-3 h-3" /> Solo Topic
+                </button>
                 <button
                   type="button"
                   onClick={() => setCreationMode('dm')}
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`text-[11px] font-semibold px-2 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
                     creationMode === 'dm'
                       ? 'bg-[#202C33] text-[#00A884] border border-[#00A884]/30'
                       : 'text-[#8696A0] hover:text-[#E9EDEF]'
                   }`}
                 >
-                  <MessageSquare className="w-3.5 h-3.5" /> Direct DM
+                  <UserPlus className="w-3 h-3" /> Direct DM
                 </button>
                 <button
                   type="button"
                   onClick={() => setCreationMode('group')}
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`text-[11px] font-semibold px-2 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer ${
                     creationMode === 'group'
                       ? 'bg-[#202C33] text-[#00A884] border border-[#00A884]/30'
                       : 'text-[#8696A0] hover:text-[#E9EDEF]'
                   }`}
                 >
-                  <Users className="w-3.5 h-3.5" /> Group Chat
+                  <Users className="w-3 h-3" /> Group
                 </button>
               </div>
               <button
@@ -163,7 +178,27 @@ export function TopicList({
               </button>
             </div>
 
-            {creationMode === 'dm' ? (
+            {creationMode === 'solo' ? (
+              // Solo Topic Input
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  required
+                  value={soloTitle}
+                  onChange={(e) => setSoloTitle(e.target.value)}
+                  placeholder="Enter topic title (e.g. My Personal Journal)..."
+                  autoFocus
+                  className="w-full bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
+                />
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !soloTitle.trim()}
+                  className="w-full py-1.5 text-xs font-bold text-white bg-[#00A884] hover:bg-[#008f70] rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Create Topic
+                </button>
+              </div>
+            ) : creationMode === 'dm' ? (
               // Direct Message Inputs
               <div className="space-y-2">
                 <input

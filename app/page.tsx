@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Topic, Statement, TopicWithPreview, Profile } from '@/lib/types';
+import { Topic, Statement, TopicWithPreview, Profile, TopicMember, Role } from '@/lib/types';
 import { TopicList } from '@/components/sidebar/TopicList';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageList } from '@/components/chat/MessageList';
@@ -70,7 +70,6 @@ export default function HomePage() {
 
     initAuth();
 
-    // Listen for auth changes (sign out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
         router.replace('/auth');
@@ -83,6 +82,7 @@ export default function HomePage() {
   // ─── Fetch Topics ───────────────────────────────────────────────────────────
 
   const fetchTopics = useCallback(async () => {
+    if (!currentUser) return;
     setIsLoadingTopics(true);
 
     const { data: topicsData, error } = await supabase
@@ -96,7 +96,7 @@ export default function HomePage() {
       return;
     }
 
-    // Enhance with preview + count
+    // Enhance topics with preview, statement count, members, and myRole
     const enhanced: TopicWithPreview[] = await Promise.all(
       (topicsData || []).map(async (t: Topic) => {
         const { data: stmts } = await supabase
@@ -111,13 +111,37 @@ export default function HomePage() {
           .select('id', { count: 'exact', head: true })
           .eq('topic_id', t.id);
 
+        // Fetch members with profiles
+        const { data: membersData } = await supabase
+          .from('topic_members')
+          .select('topic_id, user_id, role, created_at, profiles(*)')
+          .eq('topic_id', t.id);
+
+        const formattedMembers: TopicMember[] = (membersData || []).map((m: any) => ({
+          topic_id: m.topic_id,
+          user_id: m.user_id,
+          role: m.role || 'edit',
+          created_at: m.created_at,
+          profile: m.profiles,
+        }));
+
+        // Determine current user's role
+        let myRole: Role = 'admin';
+        const myMemberRecord = formattedMembers.find((m) => m.user_id === currentUser.id);
+        if (myMemberRecord) {
+          myRole = myMemberRecord.role;
+        } else if (t.created_by && t.created_by !== currentUser.id) {
+          myRole = 'edit';
+        }
+
         const lastStmt = stmts?.[0];
         return {
           ...t,
           statementCount: count ?? 0,
           lastStatementPreview: lastStmt?.content,
           lastActivityAt: lastStmt?.created_at ?? t.created_at,
-          members: [],
+          members: formattedMembers,
+          myRole,
           dm_peer: null,
         };
       })
@@ -130,9 +154,17 @@ export default function HomePage() {
     });
 
     setTopics(enhanced);
-    if (!activeTopic && enhanced.length > 0) setActiveTopic(enhanced[0]);
+
+    // Keep current active topic updated with fresh data if present
+    if (activeTopic) {
+      const updatedActive = enhanced.find((t) => t.id === activeTopic.id);
+      if (updatedActive) setActiveTopic(updatedActive);
+    } else if (enhanced.length > 0) {
+      setActiveTopic(enhanced[0]);
+    }
+
     setIsLoadingTopics(false);
-  }, [activeTopic]);
+  }, [currentUser, activeTopic]);
 
   useEffect(() => {
     if (!isLoadingAuth && currentUser) fetchTopics();
@@ -178,29 +210,72 @@ export default function HomePage() {
     setShowMobileChat(true);
   };
 
-  const handleCreateTopic = async (title: string, isGroup: boolean = false) => {
-    const { data, error } = await supabase
+  const handleCreateTopic = async (title: string, isGroup: boolean = false, memberUsernames: string[] = []) => {
+    if (!currentUser) return;
+
+    // 1. Insert Topic
+    const { data: newTopic, error } = await supabase
       .from('topics')
-      .insert([{ title, is_group: isGroup, created_by: currentUser?.id ?? null }])
+      .insert([{ title, is_group: isGroup, created_by: currentUser.id }])
       .select()
       .single();
 
     if (error) { console.error('Error creating topic:', error); return; }
 
+    // 2. Add creator as Admin in topic_members
+    await supabase.from('topic_members').insert([
+      {
+        topic_id: newTopic.id,
+        user_id: currentUser.id,
+        role: 'admin',
+      },
+    ]);
+
+    // 3. Add any specified members by username
+    if (memberUsernames && memberUsernames.length > 0) {
+      for (const username of memberUsernames) {
+        const { data: p } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', username)
+          .single();
+
+        if (p && p.id !== currentUser.id) {
+          await supabase.from('topic_members').insert([
+            {
+              topic_id: newTopic.id,
+              user_id: p.id,
+              role: 'edit',
+            },
+          ]);
+        }
+      }
+    }
+
     const newEnhanced: TopicWithPreview = {
-      ...data,
+      ...newTopic,
       statementCount: 0,
-      lastActivityAt: data.created_at,
-      members: [],
+      lastActivityAt: newTopic.created_at,
+      members: [
+        {
+          topic_id: newTopic.id,
+          user_id: currentUser.id,
+          role: 'admin',
+          created_at: new Date().toISOString(),
+          profile: currentProfile,
+        },
+      ],
+      myRole: 'admin',
       dm_peer: null,
     };
+
     setTopics((prev) => [newEnhanced, ...prev]);
     setActiveTopic(newEnhanced);
     setShowMobileChat(true);
   };
 
   const handleSaveRename = async (newTitle: string) => {
-    if (!activeTopic) return;
+    if (!activeTopic || activeTopic.myRole !== 'admin') return;
     setIsProcessingModal(true);
 
     const { error } = await supabase
@@ -220,7 +295,7 @@ export default function HomePage() {
   };
 
   const handleConfirmDeleteTopic = async () => {
-    if (!activeTopic) return;
+    if (!activeTopic || activeTopic.myRole !== 'admin') return;
     setIsProcessingModal(true);
 
     await supabase.from('topics').delete().eq('id', activeTopic.id);
@@ -236,7 +311,7 @@ export default function HomePage() {
   // ─── Statement Handlers ─────────────────────────────────────────────────────
 
   const handleSendStatement = async (content: string) => {
-    if (!activeTopic) return;
+    if (!activeTopic || activeTopic.myRole === 'view') return;
 
     const { data, error } = await supabase
       .from('statements')
@@ -268,6 +343,8 @@ export default function HomePage() {
   };
 
   const handleEditStatement = async (statementId: string, newContent: string) => {
+    if (activeTopic?.myRole === 'view') return;
+
     const { error } = await supabase
       .from('statements')
       .update({ content: newContent })
@@ -288,7 +365,7 @@ export default function HomePage() {
   };
 
   const handleDeleteStatement = async (statementId: string) => {
-    if (!activeTopic) return;
+    if (!activeTopic || activeTopic.myRole === 'view') return;
 
     await supabase.from('statements').delete().eq('id', statementId);
 
@@ -362,7 +439,11 @@ export default function HomePage() {
                 onEditStatement={handleEditStatement}
                 onDeleteStatement={handleDeleteStatement}
               />
-              <MessageInput onSend={handleSendStatement} />
+              <MessageInput
+                onSend={handleSendStatement}
+                disabled={activeTopic.myRole === 'view'}
+                disabledReason="You have view-only access to this topic."
+              />
             </>
           ) : (
             <EmptyState type="no-selection" />

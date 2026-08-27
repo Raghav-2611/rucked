@@ -1,3 +1,5 @@
+export type Role = 'admin' | 'edit' | 'view';
+
 export interface Profile {
   id: string;
   username: string;
@@ -26,6 +28,7 @@ export interface Statement {
 export interface TopicMember {
   topic_id: string;
   user_id: string;
+  role: Role;
   created_at: string;
   profile?: Profile | null;
 }
@@ -35,5 +38,6 @@ export interface TopicWithPreview extends Topic {
   lastActivityAt?: string;
   statementCount?: number;
   members?: TopicMember[];
+  myRole?: Role;
   dm_peer?: Profile | null;
 }
