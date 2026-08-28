@@ -218,19 +218,82 @@ export default function HomePage() {
     else setStatements([]);
   }, [activeTopic, fetchStatements]);
 
-  // ─── Realtime Subscriptions (Live Statements & Topics) ────────────────────
+  const chatChannelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const activeTopicRef = React.useRef<TopicWithPreview | null>(null);
+
+  useEffect(() => {
+    activeTopicRef.current = activeTopic;
+  }, [activeTopic]);
+
+  // ─── Realtime Subscriptions (Broadcast & Postgres Changes) ─────────────────
 
   useEffect(() => {
     if (!currentUser) return;
 
-    // Listen to all new statements across topics for sidebar preview & ordering updates
-    const globalChannel = supabase
-      .channel('global-chat-updates')
+    // Unified Realtime Channel for instant WebSocket Broadcast + Postgres Changes fallback
+    const channel = supabase.channel('rucked-live-chat');
+
+    channel
+      // 1. Broadcast event listeners (< 10ms instant peer-to-peer WebSocket messaging)
+      .on('broadcast', { event: 'new-statement' }, ({ payload }) => {
+        const newStmt = payload as Statement;
+        if (activeTopicRef.current && newStmt.topic_id === activeTopicRef.current.id) {
+          setStatements((prev) => {
+            if (prev.some((s) => s.id === newStmt.id)) return prev;
+            return [...prev, newStmt];
+          });
+        }
+        setTopics((prev) =>
+          prev
+            .map((t) =>
+              t.id === newStmt.topic_id
+                ? {
+                    ...t,
+                    statementCount: (t.statementCount || 0) + 1,
+                    lastStatementPreview: newStmt.content,
+                    lastActivityAt: newStmt.created_at,
+                  }
+                : t
+            )
+            .sort((a, b) => {
+              const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
+              const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
+              return timeB - timeA;
+            })
+        );
+      })
+      .on('broadcast', { event: 'edit-statement' }, ({ payload }) => {
+        const { id, content, topic_id } = payload;
+        if (activeTopicRef.current && topic_id === activeTopicRef.current.id) {
+          setStatements((prev) =>
+            prev.map((s) => (s.id === id ? { ...s, content } : s))
+          );
+        }
+        setTopics((prev) =>
+          prev.map((t) => (t.id === topic_id ? { ...t, lastStatementPreview: content } : t))
+        );
+      })
+      .on('broadcast', { event: 'delete-statement' }, ({ payload }) => {
+        const { id, topic_id } = payload;
+        if (activeTopicRef.current && topic_id === activeTopicRef.current.id) {
+          setStatements((prev) => prev.filter((s) => s.id !== id));
+        }
+      })
+      .on('broadcast', { event: 'new-topic' }, () => {
+        fetchTopics();
+      })
+      // 2. Database WAL Change Listeners
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'statements' },
         (payload) => {
           const newStmt = payload.new as Statement;
+          if (activeTopicRef.current && newStmt.topic_id === activeTopicRef.current.id) {
+            setStatements((prev) => {
+              if (prev.some((s) => s.id === newStmt.id)) return prev;
+              return [...prev, newStmt];
+            });
+          }
           setTopics((prev) =>
             prev
               .map((t) =>
@@ -258,69 +321,17 @@ export default function HomePage() {
           fetchTopics();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          chatChannelRef.current = channel;
+        }
+      });
 
     return () => {
-      supabase.removeChannel(globalChannel);
+      supabase.removeChannel(channel);
+      chatChannelRef.current = null;
     };
   }, [currentUser, fetchTopics]);
-
-  useEffect(() => {
-    if (!activeTopic) return;
-
-    // Listen to real-time statement changes for the currently active topic
-    const topicChannel = supabase
-      .channel(`topic-room-${activeTopic.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'statements',
-          filter: `topic_id=eq.${activeTopic.id}`,
-        },
-        (payload) => {
-          const newStmt = payload.new as Statement;
-          setStatements((prev) => {
-            if (prev.some((s) => s.id === newStmt.id)) return prev;
-            return [...prev, newStmt];
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'statements',
-          filter: `topic_id=eq.${activeTopic.id}`,
-        },
-        (payload) => {
-          const updatedStmt = payload.new as Statement;
-          setStatements((prev) =>
-            prev.map((s) => (s.id === updatedStmt.id ? { ...s, ...updatedStmt } : s))
-          );
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'statements',
-          filter: `topic_id=eq.${activeTopic.id}`,
-        },
-        (payload) => {
-          const oldStmt = payload.old as { id: string };
-          setStatements((prev) => prev.filter((s) => s.id !== oldStmt.id));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(topicChannel);
-    };
-  }, [activeTopic]);
 
   // ─── Sign Out ───────────────────────────────────────────────────────────────
 
@@ -507,6 +518,12 @@ export default function HomePage() {
           return timeB - timeA;
         })
     );
+
+    chatChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'new-statement',
+      payload: data,
+    });
   };
 
   const handleEditStatement = async (statementId: string, newContent: string) => {
@@ -529,6 +546,12 @@ export default function HomePage() {
         )
       );
     }
+
+    chatChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'edit-statement',
+      payload: { id: statementId, content: newContent, topic_id: activeTopic?.id },
+    });
   };
 
   const handleDeleteStatement = async (statementId: string) => {
@@ -550,6 +573,12 @@ export default function HomePage() {
           : t
       )
     );
+
+    chatChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'delete-statement',
+      payload: { id: statementId, topic_id: activeTopic.id },
+    });
   };
 
   // ─── Loading screen ─────────────────────────────────────────────────────────
