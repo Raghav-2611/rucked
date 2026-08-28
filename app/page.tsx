@@ -54,20 +54,29 @@ export default function HomePage() {
       setCurrentUser(session.user);
 
       // Fetch profile (username)
+      let currentProf: Profile | null = null;
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
         .single();
 
-      setCurrentProfile(profile ?? {
-        id: session.user.id,
-        username: session.user.email?.split('@')[0] ?? 'user',
-        display_name: null,
-        avatar_url: null,
-        created_at: session.user.created_at,
-      });
+      if (profile) {
+        currentProf = profile;
+      } else {
+        // Fallback: create profile if DB trigger was skipped
+        const fallbackUsername = session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'user';
+        currentProf = {
+          id: session.user.id,
+          username: fallbackUsername,
+          display_name: session.user.user_metadata?.display_name || fallbackUsername,
+          avatar_url: session.user.user_metadata?.avatar_url || null,
+          created_at: session.user.created_at || new Date().toISOString(),
+        };
+        await supabase.from('profiles').upsert([currentProf], { onConflict: 'id' });
+      }
 
+      setCurrentProfile(currentProf);
       setIsLoadingAuth(false);
     };
 

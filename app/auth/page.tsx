@@ -31,19 +31,28 @@ export default function AuthPage() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: siEmail.trim(),
-      password: siPassword,
-    });
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: siEmail.trim(),
+        password: siPassword,
+      });
 
-    if (error) {
-      setError(error.message);
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+      } else if (data.session) {
+        router.replace('/');
+        router.refresh();
+      } else {
+        setError('Sign in failed. Please check your credentials.');
+        setLoading(false);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'An unexpected error occurred during sign in.');
       setLoading(false);
-    } else {
-      router.push('/');
-      router.refresh();
     }
   };
 
@@ -69,30 +78,38 @@ export default function AuthPage() {
 
     setLoading(true);
 
-    // Sign up — username passed as metadata so the DB trigger picks it up
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: suEmail.trim(),
-      password: suPassword,
-      options: {
-        data: { username: usernameClean, display_name: usernameClean },
-      },
-    });
+    try {
+      // Sign up — username passed as metadata so the DB trigger picks it up
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: suEmail.trim(),
+        password: suPassword,
+        options: {
+          data: { username: usernameClean, display_name: usernameClean },
+        },
+      });
 
-    if (signUpError) {
-      setError(signUpError.message);
-      setLoading(false);
-      return;
-    }
+      if (signUpError) {
+        setError(signUpError.message);
+        setLoading(false);
+        return;
+      }
 
-    if (data.session) {
-      // Email confirmation OFF — session ready, go to app
-      router.push('/');
-      router.refresh();
-    } else {
-      // Email confirmation ON — prompt user to check inbox
+      if (data.session) {
+        // Email confirmation OFF — session ready, go to app
+        router.replace('/');
+        router.refresh();
+      } else if (data.user) {
+        // Account created (if email confirmation is required or not)
+        setLoading(false);
+        setSuccess('Account created successfully! You can now sign in.');
+        setTab('signin');
+      } else {
+        setLoading(false);
+        setError('Signup failed. Please try again.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'An unexpected error occurred during account creation.');
       setLoading(false);
-      setSuccess('Account created! Check your email to confirm, then sign in.');
-      setTab('signin');
     }
   };
 

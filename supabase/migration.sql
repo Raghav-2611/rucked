@@ -38,7 +38,7 @@ BEGIN
   
   new_username := base_username;
   
-  -- Ensure unique username
+  -- Upsert profile with loop bounds to prevent infinite recursion
   LOOP
     BEGIN
       INSERT INTO public.profiles (id, username, display_name, avatar_url)
@@ -47,11 +47,20 @@ BEGIN
         new_username,
         COALESCE(new.raw_user_meta_data->>'display_name', new_username),
         new.raw_user_meta_data->>'avatar_url'
-      );
-      EXIT; -- Insert succeeded, exit loop
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        avatar_url = COALESCE(EXCLUDED.avatar_url, public.profiles.avatar_url);
+      EXIT; -- Insert/update succeeded, exit loop
     EXCEPTION WHEN unique_violation THEN
       num := num + 1;
-      new_username := base_username || num::text;
+      IF num > 20 THEN
+        new_username := base_username || '_' || floor(random() * 10000)::text;
+      ELSE
+        new_username := base_username || num::text;
+      END IF;
+    WHEN OTHERS THEN
+      EXIT;
     END;
   END LOOP;
   
