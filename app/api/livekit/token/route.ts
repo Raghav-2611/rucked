@@ -9,8 +9,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'topicId and participantName are required' }, { status: 400 });
     }
 
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const apiKey = process.env.LIVEKIT_API_KEY || 'APIdqR5t6UDV58H';
+    const apiSecret = process.env.LIVEKIT_API_SECRET || 'LZXd7gkGfSgZbyjeVgBfk9N6DPSE6qHYOuujsptur6HB';
 
     if (!apiKey || !apiSecret) {
       return NextResponse.json({ error: 'LiveKit credentials not configured' }, { status: 500 });

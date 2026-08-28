@@ -131,7 +131,7 @@ function VideoCallUI({ onEnd }: { onEnd: () => void }) {
 // ─── Main CallModal ───────────────────────────────────────────────────────────
 
 export function CallModal({ isOpen, topicTitle, token, mode, onDisconnect }: CallModalProps) {
-  const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL!;
+  const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://rucked-zhvhpdmu.livekit.cloud';
   const [participantCount, setParticipantCount] = useState(0);
 
   if (!isOpen) return null;
