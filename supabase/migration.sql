@@ -14,20 +14,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- Enable RLS on profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- Create Profile Policies
-DROP POLICY IF EXISTS "Allow authenticated users to read profiles" ON public.profiles;
-CREATE POLICY "Allow authenticated users to read profiles"
-  ON public.profiles FOR SELECT
-  TO authenticated
-  USING (true);
-
-DROP POLICY IF EXISTS "Allow users to update their own profile" ON public.profiles;
-CREATE POLICY "Allow users to update their own profile"
-  ON public.profiles FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id);
-
 -- 2. Trigger to automatically create a profile when a new user signs up
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
@@ -95,14 +81,13 @@ CREATE TABLE IF NOT EXISTS public.topic_members (
 -- Add role column if the table already exists (idempotent upgrade)
 ALTER TABLE public.topic_members ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'edit' CHECK (role IN ('admin', 'edit', 'view'));
 
--- Enable RLS on topic_members
-ALTER TABLE public.topic_members ENABLE ROW LEVEL SECURITY;
-
 -- 5. Modify Statements Table
 ALTER TABLE public.statements ADD COLUMN IF NOT EXISTS sender_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
 
--- Enable RLS on topics and statements (overwrite/re-enable)
+-- Enable RLS on all tables
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.topic_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.statements ENABLE ROW LEVEL SECURITY;
 
 -- 6. Helper Function (SECURITY DEFINER to prevent RLS recursion)
@@ -119,33 +104,34 @@ AS $$
   );
 $$;
 
--- Drop old policies if existing
-DROP POLICY IF EXISTS "Allow public full access on topics" ON public.topics;
-DROP POLICY IF EXISTS "Allow public full access on statements" ON public.statements;
-DROP POLICY IF EXISTS "Allow members to read topics" ON public.topics;
-DROP POLICY IF EXISTS "Allow authenticated users to create topics" ON public.topics;
-DROP POLICY IF EXISTS "Allow members to update topics" ON public.topics;
-DROP POLICY IF EXISTS "Allow members to delete topics" ON public.topics;
-DROP POLICY IF EXISTS "Allow authenticated users to read topics" ON public.topics;
-DROP POLICY IF EXISTS "Allow authenticated users to update topics" ON public.topics;
-DROP POLICY IF EXISTS "Allow authenticated users to delete topics" ON public.topics;
+-- 7. DYNAMICALLY DROP ALL EXISTING POLICIES TO PREVENT RECURSIVE CONFLICTS
+DO $$ 
+DECLARE 
+    r RECORD;
+BEGIN
+    FOR r IN (
+        SELECT policyname, tablename 
+        FROM pg_policies 
+        WHERE schemaname = 'public' 
+          AND tablename IN ('topics', 'topic_members', 'statements', 'profiles')
+    ) LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, r.tablename);
+    END LOOP;
+END $$;
 
-DROP POLICY IF EXISTS "Allow members to read topic memberships" ON public.topic_members;
-DROP POLICY IF EXISTS "Allow members to add other members" ON public.topic_members;
-DROP POLICY IF EXISTS "Allow members to update member roles" ON public.topic_members;
-DROP POLICY IF EXISTS "Allow members to leave or remove members" ON public.topic_members;
-DROP POLICY IF EXISTS "Allow authenticated users to read topic memberships" ON public.topic_members;
-DROP POLICY IF EXISTS "Allow authenticated users to add topic members" ON public.topic_members;
-DROP POLICY IF EXISTS "Allow authenticated users to remove topic members" ON public.topic_members;
+-- 8. RLS Policies for Profiles
+CREATE POLICY "Allow authenticated users to read profiles"
+  ON public.profiles FOR SELECT
+  TO authenticated
+  USING (true);
 
-DROP POLICY IF EXISTS "Allow members to read statements" ON public.statements;
-DROP POLICY IF EXISTS "Allow members to insert statements" ON public.statements;
-DROP POLICY IF EXISTS "Allow senders to update their own statements" ON public.statements;
-DROP POLICY IF EXISTS "Allow senders to delete their own statements" ON public.statements;
-DROP POLICY IF EXISTS "Allow authenticated users to read statements" ON public.statements;
-DROP POLICY IF EXISTS "Allow authenticated users to insert statements" ON public.statements;
+CREATE POLICY "Allow users to update their own profile"
+  ON public.profiles FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
--- 7. RLS Policies for Topics
+-- 9. RLS Policies for Topics
 CREATE POLICY "Allow authenticated users to read topics"
   ON public.topics FOR SELECT
   TO authenticated
@@ -166,7 +152,7 @@ CREATE POLICY "Allow authenticated users to delete topics"
   TO authenticated
   USING (true);
 
--- 8. RLS Policies for Topic Members
+-- 10. RLS Policies for Topic Members
 CREATE POLICY "Allow authenticated users to read topic memberships"
   ON public.topic_members FOR SELECT
   TO authenticated
@@ -187,7 +173,7 @@ CREATE POLICY "Allow authenticated users to remove topic members"
   TO authenticated
   USING (true);
 
--- 9. RLS Policies for Statements
+-- 11. RLS Policies for Statements
 CREATE POLICY "Allow authenticated users to read statements"
   ON public.statements FOR SELECT
   TO authenticated
