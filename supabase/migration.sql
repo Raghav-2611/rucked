@@ -85,9 +85,13 @@ ALTER TABLE public.topics ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES pu
 CREATE TABLE IF NOT EXISTS public.topic_members (
   topic_id UUID REFERENCES public.topics(id) ON DELETE CASCADE,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'edit' CHECK (role IN ('admin', 'edit', 'view')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (topic_id, user_id)
 );
+
+-- Add role column if the table already exists (idempotent upgrade)
+ALTER TABLE public.topic_members ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'edit' CHECK (role IN ('admin', 'edit', 'view'));
 
 -- Enable RLS on topic_members
 ALTER TABLE public.topic_members ENABLE ROW LEVEL SECURITY;
