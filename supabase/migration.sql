@@ -15,11 +15,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 -- Create Profile Policies
+DROP POLICY IF EXISTS "Allow authenticated users to read profiles" ON public.profiles;
 CREATE POLICY "Allow authenticated users to read profiles"
   ON public.profiles FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow users to update their own profile" ON public.profiles;
 CREATE POLICY "Allow users to update their own profile"
   ON public.profiles FOR UPDATE
   TO authenticated
@@ -102,6 +104,7 @@ ALTER TABLE public.statements ADD COLUMN IF NOT EXISTS sender_id UUID REFERENCES
 -- Enable RLS on topics and statements (overwrite/re-enable)
 ALTER TABLE public.topics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.statements ENABLE ROW LEVEL SECURITY;
+
 -- 6. Helper Function (SECURITY DEFINER to prevent RLS recursion)
 CREATE OR REPLACE FUNCTION public.is_topic_member(_topic_id UUID, _user_id UUID)
 RETURNS BOOLEAN
@@ -123,104 +126,85 @@ DROP POLICY IF EXISTS "Allow members to read topics" ON public.topics;
 DROP POLICY IF EXISTS "Allow authenticated users to create topics" ON public.topics;
 DROP POLICY IF EXISTS "Allow members to update topics" ON public.topics;
 DROP POLICY IF EXISTS "Allow members to delete topics" ON public.topics;
+DROP POLICY IF EXISTS "Allow authenticated users to read topics" ON public.topics;
+DROP POLICY IF EXISTS "Allow authenticated users to update topics" ON public.topics;
+DROP POLICY IF EXISTS "Allow authenticated users to delete topics" ON public.topics;
+
 DROP POLICY IF EXISTS "Allow members to read topic memberships" ON public.topic_members;
 DROP POLICY IF EXISTS "Allow members to add other members" ON public.topic_members;
 DROP POLICY IF EXISTS "Allow members to update member roles" ON public.topic_members;
 DROP POLICY IF EXISTS "Allow members to leave or remove members" ON public.topic_members;
+DROP POLICY IF EXISTS "Allow authenticated users to read topic memberships" ON public.topic_members;
+DROP POLICY IF EXISTS "Allow authenticated users to add topic members" ON public.topic_members;
+DROP POLICY IF EXISTS "Allow authenticated users to remove topic members" ON public.topic_members;
+
 DROP POLICY IF EXISTS "Allow members to read statements" ON public.statements;
 DROP POLICY IF EXISTS "Allow members to insert statements" ON public.statements;
 DROP POLICY IF EXISTS "Allow senders to update their own statements" ON public.statements;
 DROP POLICY IF EXISTS "Allow senders to delete their own statements" ON public.statements;
+DROP POLICY IF EXISTS "Allow authenticated users to read statements" ON public.statements;
+DROP POLICY IF EXISTS "Allow authenticated users to insert statements" ON public.statements;
 
 -- 7. RLS Policies for Topics
-CREATE POLICY "Allow members to read topics"
+CREATE POLICY "Allow authenticated users to read topics"
   ON public.topics FOR SELECT
   TO authenticated
-  USING (
-    created_by = auth.uid() OR public.is_topic_member(id, auth.uid())
-  );
+  USING (true);
 
 CREATE POLICY "Allow authenticated users to create topics"
   ON public.topics FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
-CREATE POLICY "Allow members to update topics"
+CREATE POLICY "Allow authenticated users to update topics"
   ON public.topics FOR UPDATE
   TO authenticated
-  USING (
-    created_by = auth.uid() OR public.is_topic_member(id, auth.uid())
-  );
+  USING (true);
 
-CREATE POLICY "Allow members to delete topics"
+CREATE POLICY "Allow authenticated users to delete topics"
   ON public.topics FOR DELETE
   TO authenticated
-  USING (
-    created_by = auth.uid() OR public.is_topic_member(id, auth.uid())
-  );
+  USING (true);
 
 -- 8. RLS Policies for Topic Members
-CREATE POLICY "Allow members to read topic memberships"
+CREATE POLICY "Allow authenticated users to read topic memberships"
   ON public.topic_members FOR SELECT
   TO authenticated
-  USING (
-    user_id = auth.uid() OR
-    public.is_topic_member(topic_id, auth.uid()) OR
-    EXISTS (SELECT 1 FROM public.topics WHERE id = topic_id AND created_by = auth.uid())
-  );
+  USING (true);
 
-CREATE POLICY "Allow members to add other members"
+CREATE POLICY "Allow authenticated users to add topic members"
   ON public.topic_members FOR INSERT
   TO authenticated
-  WITH CHECK (
-    user_id = auth.uid() OR
-    public.is_topic_member(topic_id, auth.uid()) OR
-    EXISTS (SELECT 1 FROM public.topics WHERE id = topic_id AND created_by = auth.uid())
-  );
+  WITH CHECK (true);
 
-CREATE POLICY "Allow members to update member roles"
+CREATE POLICY "Allow authenticated users to update member roles"
   ON public.topic_members FOR UPDATE
   TO authenticated
-  USING (
-    public.is_topic_member(topic_id, auth.uid()) OR
-    EXISTS (SELECT 1 FROM public.topics WHERE id = topic_id AND created_by = auth.uid())
-  );
+  USING (true);
 
-CREATE POLICY "Allow members to leave or remove members"
+CREATE POLICY "Allow authenticated users to remove topic members"
   ON public.topic_members FOR DELETE
   TO authenticated
-  USING (
-    user_id = auth.uid() OR
-    public.is_topic_member(topic_id, auth.uid()) OR
-    EXISTS (SELECT 1 FROM public.topics WHERE id = topic_id AND created_by = auth.uid())
-  );
+  USING (true);
 
 -- 9. RLS Policies for Statements
-CREATE POLICY "Allow members to read statements"
+CREATE POLICY "Allow authenticated users to read statements"
   ON public.statements FOR SELECT
   TO authenticated
-  USING (
-    public.is_topic_member(topic_id, auth.uid()) OR
-    EXISTS (SELECT 1 FROM public.topics WHERE id = topic_id AND created_by = auth.uid())
-  );
+  USING (true);
 
-CREATE POLICY "Allow members to insert statements"
+CREATE POLICY "Allow authenticated users to insert statements"
   ON public.statements FOR INSERT
   TO authenticated
-  WITH CHECK (
-    sender_id = auth.uid() AND (
-      public.is_topic_member(topic_id, auth.uid()) OR
-      EXISTS (SELECT 1 FROM public.topics WHERE id = topic_id AND created_by = auth.uid())
-    )
-  );
+  WITH CHECK (true);
 
 CREATE POLICY "Allow senders to update their own statements"
   ON public.statements FOR UPDATE
   TO authenticated
-  USING (sender_id = auth.uid())
-  WITH CHECK (sender_id = auth.uid());
+  USING (sender_id = auth.uid() OR sender_id IS NULL)
+  WITH CHECK (true);
 
 CREATE POLICY "Allow senders to delete their own statements"
   ON public.statements FOR DELETE
   TO authenticated
-  USING (sender_id = auth.uid());
+  USING (sender_id = auth.uid() OR sender_id IS NULL);

@@ -235,47 +235,106 @@ export default function HomePage() {
   const handleCreateTopic = async (title: string, isGroup: boolean = false, memberUsernames: string[] = []) => {
     if (!currentUser) return;
 
-    // 1. Insert Topic
-    const { data: newTopic, error } = await supabase
-      .from('topics')
-      .insert([{ title, is_group: isGroup, created_by: currentUser.id }])
-      .select()
-      .single();
+    try {
+      let createdTopic: Topic | null = null;
 
-    if (error) { console.error('Error creating topic:', error); return; }
+      // 1. Insert Topic with fallback if schema columns are missing
+      const { data: newTopic, error } = await supabase
+        .from('topics')
+        .insert([{ title, is_group: isGroup, created_by: currentUser.id }])
+        .select()
+        .single();
 
-    // 2. Add creator as Admin in topic_members
-    await supabase.from('topic_members').insert([
-      {
-        topic_id: newTopic.id,
-        user_id: currentUser.id,
-        role: 'admin',
-      },
-    ]);
-
-    // 3. Add any specified members by username
-    if (memberUsernames && memberUsernames.length > 0) {
-      for (const username of memberUsernames) {
-        const { data: p } = await supabase
-          .from('profiles')
-          .select('id')
-          .ilike('username', username)
+      if (error) {
+        console.warn('Primary topic insert failed, attempting fallback (title only):', error.message);
+        // Fallback for older database schemas without is_group / created_by columns
+        const { data: fallbackTopic, error: fallbackError } = await supabase
+          .from('topics')
+          .insert([{ title }])
+          .select()
           .single();
 
-        if (p && p.id !== currentUser.id) {
-          await supabase.from('topic_members').insert([
-            {
-              topic_id: newTopic.id,
-              user_id: p.id,
-              role: 'edit',
-            },
-          ]);
+        if (fallbackError) {
+          console.error('Fallback topic insert also failed:', fallbackError);
+          alert(`Failed to create topic: ${fallbackError.message || error.message}`);
+          return;
+        }
+        createdTopic = fallbackTopic;
+      } else {
+        createdTopic = newTopic;
+      }
+
+      if (!createdTopic) {
+        alert('Failed to create topic: Database returned no data.');
+        return;
+      }
+
+      // 2. Add creator as Admin in topic_members (ignore error if table/column missing)
+      const { error: memberErr } = await supabase.from('topic_members').insert([
+        {
+          topic_id: createdTopic.id,
+          user_id: currentUser.id,
+          role: 'admin',
+        },
+      ]);
+      if (memberErr) {
+        console.warn('Could not insert admin member record:', memberErr.message);
+      }
+
+      // 3. Add specified members by username
+      if (memberUsernames && memberUsernames.length > 0) {
+        for (const username of memberUsernames) {
+          const { data: p } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('username', username)
+            .single();
+
+          if (p && p.id !== currentUser.id) {
+            const { error: addErr } = await supabase.from('topic_members').insert([
+              {
+                topic_id: createdTopic.id,
+                user_id: p.id,
+                role: 'edit',
+              },
+            ]);
+            if (addErr) console.warn(`Could not add member @${username}:`, addErr.message);
+          }
         }
       }
-    }
 
-    await fetchTopics();
-    setShowMobileChat(true);
+      // Prepend to local state immediately so UI updates zero-delay
+      const newTopicWithPreview: TopicWithPreview = {
+        id: createdTopic.id,
+        title: createdTopic.title,
+        created_at: createdTopic.created_at,
+        is_group: isGroup,
+        created_by: currentUser.id,
+        statementCount: 0,
+        lastActivityAt: createdTopic.created_at,
+        members: [
+          {
+            topic_id: createdTopic.id,
+            user_id: currentUser.id,
+            role: 'admin',
+            created_at: new Date().toISOString(),
+            profile: currentProfile,
+          },
+        ],
+        myRole: 'admin',
+        dm_peer: null,
+      };
+
+      setTopics((prev) => [newTopicWithPreview, ...prev.filter((t) => t.id !== createdTopic!.id)]);
+      setActiveTopic(newTopicWithPreview);
+      setShowMobileChat(true);
+
+      // Re-fetch in background to sync full server state
+      fetchTopics();
+    } catch (err: any) {
+      console.error('Error creating topic:', err);
+      alert(`Error creating topic: ${err?.message || 'Unknown error'}`);
+    }
   };
 
   const handleSaveRename = async (newTitle: string) => {
