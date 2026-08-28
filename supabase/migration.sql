@@ -194,3 +194,30 @@ CREATE POLICY "Allow senders to delete their own statements"
   ON public.statements FOR DELETE
   TO authenticated
   USING (sender_id = auth.uid() OR sender_id IS NULL);
+
+-- 12. Enable Supabase Realtime Replication for Tables
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'statements'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.statements;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'topics'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.topics;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'topic_members'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.topic_members;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;

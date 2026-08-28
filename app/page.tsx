@@ -218,6 +218,110 @@ export default function HomePage() {
     else setStatements([]);
   }, [activeTopic, fetchStatements]);
 
+  // ─── Realtime Subscriptions (Live Statements & Topics) ────────────────────
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Listen to all new statements across topics for sidebar preview & ordering updates
+    const globalChannel = supabase
+      .channel('global-chat-updates')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'statements' },
+        (payload) => {
+          const newStmt = payload.new as Statement;
+          setTopics((prev) =>
+            prev
+              .map((t) =>
+                t.id === newStmt.topic_id
+                  ? {
+                      ...t,
+                      statementCount: (t.statementCount || 0) + 1,
+                      lastStatementPreview: newStmt.content,
+                      lastActivityAt: newStmt.created_at,
+                    }
+                  : t
+              )
+              .sort((a, b) => {
+                const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
+                const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
+                return timeB - timeA;
+              })
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'topics' },
+        () => {
+          fetchTopics();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(globalChannel);
+    };
+  }, [currentUser, fetchTopics]);
+
+  useEffect(() => {
+    if (!activeTopic) return;
+
+    // Listen to real-time statement changes for the currently active topic
+    const topicChannel = supabase
+      .channel(`topic-room-${activeTopic.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'statements',
+          filter: `topic_id=eq.${activeTopic.id}`,
+        },
+        (payload) => {
+          const newStmt = payload.new as Statement;
+          setStatements((prev) => {
+            if (prev.some((s) => s.id === newStmt.id)) return prev;
+            return [...prev, newStmt];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'statements',
+          filter: `topic_id=eq.${activeTopic.id}`,
+        },
+        (payload) => {
+          const updatedStmt = payload.new as Statement;
+          setStatements((prev) =>
+            prev.map((s) => (s.id === updatedStmt.id ? { ...s, ...updatedStmt } : s))
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'statements',
+          filter: `topic_id=eq.${activeTopic.id}`,
+        },
+        (payload) => {
+          const oldStmt = payload.old as { id: string };
+          setStatements((prev) => prev.filter((s) => s.id !== oldStmt.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(topicChannel);
+    };
+  }, [activeTopic]);
+
   // ─── Sign Out ───────────────────────────────────────────────────────────────
 
   const handleSignOut = async () => {
@@ -503,6 +607,7 @@ export default function HomePage() {
                 isLoading={isLoadingStatements}
                 onEditStatement={handleEditStatement}
                 onDeleteStatement={handleDeleteStatement}
+                currentUser={currentUser}
               />
               <MessageInput
                 onSend={handleSendStatement}
