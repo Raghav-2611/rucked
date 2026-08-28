@@ -259,7 +259,7 @@ export default function HomePage() {
         const { data: p } = await supabase
           .from('profiles')
           .select('id')
-          .eq('username', username)
+          .ilike('username', username)
           .single();
 
         if (p && p.id !== currentUser.id) {
@@ -274,25 +274,7 @@ export default function HomePage() {
       }
     }
 
-    const newEnhanced: TopicWithPreview = {
-      ...newTopic,
-      statementCount: 0,
-      lastActivityAt: newTopic.created_at,
-      members: [
-        {
-          topic_id: newTopic.id,
-          user_id: currentUser.id,
-          role: 'admin',
-          created_at: new Date().toISOString(),
-          profile: currentProfile,
-        },
-      ],
-      myRole: 'admin',
-      dm_peer: null,
-    };
-
-    setTopics((prev) => [newEnhanced, ...prev]);
-    setActiveTopic(newEnhanced);
+    await fetchTopics();
     setShowMobileChat(true);
   };
 

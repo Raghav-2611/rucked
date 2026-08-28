@@ -42,11 +42,11 @@ export function MemberModal({
 
     try {
       const targetUser = newUsername.trim().toLowerCase();
-      // Search for profile
+      // Search for profile (case-insensitive)
       const { data: profile, error: searchError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('username', targetUser)
+        .ilike('username', targetUser)
         .single();
 
       if (searchError || !profile) {
