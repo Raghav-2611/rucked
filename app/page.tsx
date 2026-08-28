@@ -618,7 +618,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#111B21]">
+    <div className="flex flex-col h-[100dvh] w-full max-w-full overflow-hidden bg-[#111B21]">
       <div className="flex-1 flex w-full h-full overflow-hidden">
         {/* Left Sidebar */}
         <div

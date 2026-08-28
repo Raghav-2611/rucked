@@ -26,6 +26,15 @@ export function MessageBubble({
 
   const timestamp = formatStatementTimestamp(statement.created_at);
 
+  // Check if message was created within the last 1 hour (60 minutes)
+  const isEditable = React.useMemo(() => {
+    if (!statement.created_at) return true;
+    const createdAtTime = new Date(statement.created_at).getTime();
+    const now = Date.now();
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    return now - createdAtTime < ONE_HOUR_MS;
+  }, [statement.created_at]);
+
   const senderName =
     statement.sender?.display_name || statement.sender?.username || 'Unknown';
 
@@ -66,23 +75,27 @@ export function MessageBubble({
           </p>
         )}
 
-        {/* Actions (only for own messages) */}
+        {/* Actions (only for own messages: Edit allowed < 1 hr, Delete allowed anytime) */}
         {isOwn && !isEditing && (
-          <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-[#111B21]/90 rounded-lg p-1 border border-[#2A3942] backdrop-blur-xs">
+          <div className="absolute top-1.5 left-1.5 opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-[#111B21]/95 rounded-lg p-1 border border-[#2A3942] backdrop-blur-xs shadow-md z-10">
+            {isEditable && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditContent(statement.content);
+                  setIsEditing(true);
+                }}
+                className="p-1 text-[#8696A0] hover:text-[#00A884] transition-colors cursor-pointer"
+                title="Edit message (within 1 hour)"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
-              onClick={() => {
-                setEditContent(statement.content);
-                setIsEditing(true);
-              }}
-              className="p-1 text-[#8696A0] hover:text-[#00A884] transition-colors"
-              title="Edit statement"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-            <button
+              type="button"
               onClick={() => onDelete(statement.id)}
-              className="p-1 text-[#8696A0] hover:text-red-400 transition-colors"
-              title="Delete statement"
+              className="p-1 text-[#8696A0] hover:text-red-400 transition-colors cursor-pointer"
+              title="Delete message"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

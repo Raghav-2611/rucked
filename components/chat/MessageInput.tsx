@@ -46,8 +46,8 @@ export function MessageInput({ onSend, disabled = false, disabledReason }: Messa
   if (disabled) {
     return (
       <div
-        className="p-3 bg-[#202C33] border-t border-[#2A3942] z-10"
-        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+        className="p-2.5 sm:p-3 bg-[#202C33] border-t border-[#2A3942] z-20 shrink-0 sticky bottom-0 w-full"
+        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
       >
         <div className="max-w-4xl mx-auto flex items-center justify-center gap-2 bg-[#111B21] border border-[#2A3942] rounded-2xl px-4 py-3 text-xs text-[#8696A0]">
           <Lock className="w-4 h-4 text-yellow-400 shrink-0" />
@@ -59,19 +59,19 @@ export function MessageInput({ onSend, disabled = false, disabledReason }: Messa
 
   return (
     <div
-      className="p-3 bg-[#202C33] border-t border-[#2A3942] z-10"
-      style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      className="p-2.5 sm:p-3 bg-[#202C33] border-t border-[#2A3942] z-20 shrink-0 sticky bottom-0 w-full"
+      style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
     >
-      <div className="max-w-4xl mx-auto flex items-end gap-2 bg-[#111B21] border border-[#2A3942] focus-within:border-[#00A884] rounded-2xl px-4 py-2 transition-colors">
+      <div className="max-w-4xl mx-auto flex items-end gap-2 bg-[#111B21] border border-[#2A3942] focus-within:border-[#00A884] rounded-2xl px-3 sm:px-4 py-1.5 sm:py-2 transition-colors shadow-lg">
         <textarea
           ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Write a statement, thought, or idea... (Enter to send, Shift+Enter for new line)"
+          placeholder="Write a message..."
           rows={1}
           disabled={disabled}
-          className="flex-1 bg-transparent text-sm text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none resize-none py-1.5 max-h-40 min-h-[36px]"
+          className="flex-1 bg-transparent text-sm text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none resize-none py-1.5 max-h-36 min-h-[36px]"
         />
 
         <button
