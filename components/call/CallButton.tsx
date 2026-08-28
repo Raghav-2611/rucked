@@ -11,6 +11,8 @@ interface CallButtonProps {
   participantName: string;
   displayName?: string;
   disabled?: boolean;
+  onCallStateChange?: (isActive: boolean, mode: 'voice' | 'video') => void;
+  externalActiveMode?: 'voice' | 'video' | null;
 }
 
 export function CallButton({
@@ -19,36 +21,19 @@ export function CallButton({
   participantName,
   displayName,
   disabled = false,
+  onCallStateChange,
+  externalActiveMode,
 }: CallButtonProps) {
   const [callMode, setCallMode] = useState<'voice' | 'video' | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<'voice' | 'video' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  // Broadcast call state to all connected clients via Supabase Realtime
-  const broadcastCallState = (isActive: boolean) => {
-    const channel = supabase.channel('active-calls');
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        channel.send({
-          type: 'broadcast',
-          event: 'call-state',
-          payload: { topicId, isActive },
-        });
-      }
-    });
-    channelRef.current = channel;
-  };
-
-  // Cleanup channel on unmount
   useEffect(() => {
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-    };
-  }, []);
+    if (externalActiveMode && !callMode && !isLoading) {
+      startCall(externalActiveMode);
+    }
+  }, [externalActiveMode]);
 
   const startCall = async (mode: 'voice' | 'video') => {
     if (isLoading || disabled) return;
@@ -72,7 +57,9 @@ export function CallButton({
       setCallMode(mode);
 
       // Broadcast that a call is now active in this topic
-      broadcastCallState(true);
+      if (onCallStateChange) {
+        onCallStateChange(true, mode);
+      }
     } catch (err: any) {
       setError(err.message);
       setTimeout(() => setError(null), 3000);
@@ -83,11 +70,8 @@ export function CallButton({
 
   const handleDisconnect = () => {
     // Broadcast that the call ended
-    broadcastCallState(false);
-
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+    if (onCallStateChange) {
+      onCallStateChange(false, callMode || 'video');
     }
 
     setToken(null);

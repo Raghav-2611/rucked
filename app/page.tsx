@@ -282,6 +282,15 @@ export default function HomePage() {
       .on('broadcast', { event: 'new-topic' }, () => {
         fetchTopics();
       })
+      .on('broadcast', { event: 'call-state' }, ({ payload }) => {
+        const { topicId, isActive } = payload as { topicId: string; isActive: boolean };
+        setActiveCallTopicIds((prev) => {
+          const next = new Set(prev);
+          if (isActive) next.add(topicId);
+          else next.delete(topicId);
+          return next;
+        });
+      })
       // 2. Database WAL Change Listeners
       .on(
         'postgres_changes',
@@ -593,6 +602,21 @@ export default function HomePage() {
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
+  const handleCallStateChange = (topicId: string, isActive: boolean) => {
+    setActiveCallTopicIds((prev) => {
+      const next = new Set(prev);
+      if (isActive) next.add(topicId);
+      else next.delete(topicId);
+      return next;
+    });
+
+    chatChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'call-state',
+      payload: { topicId, isActive },
+    });
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#111B21]">
       <div className="flex-1 flex w-full h-full overflow-hidden">
@@ -630,6 +654,8 @@ export default function HomePage() {
                 onDeleteTopic={() => setIsDeleteModalOpen(true)}
                 currentProfile={currentProfile}
                 onMemberAdded={fetchTopics}
+                isCallActive={activeCallTopicIds.has(activeTopic.id)}
+                onCallStateChange={(isActive) => handleCallStateChange(activeTopic.id, isActive)}
               />
               <MessageList
                 statements={statements}
