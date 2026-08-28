@@ -15,6 +15,7 @@ interface TopicListProps {
   isLoading: boolean;
   currentProfile?: Profile | null;
   onSignOut?: () => void;
+  activeCallTopicIds?: Set<string>;
 }
 
 export function TopicList({
@@ -25,6 +26,7 @@ export function TopicList({
   isLoading,
   currentProfile,
   onSignOut,
+  activeCallTopicIds = new Set(),
 }: TopicListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -287,6 +289,7 @@ export function TopicList({
               key={topic.id}
               topic={topic}
               isActive={topic.id === activeTopicId}
+              isCallActive={activeCallTopicIds.has(topic.id)}
               onSelect={onSelectTopic}
             />
           ))

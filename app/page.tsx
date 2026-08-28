@@ -32,6 +32,9 @@ export default function HomePage() {
   const [isLoadingStatements, setIsLoadingStatements] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
 
+  // Active calls — tracks which topic IDs have a live call via Supabase Realtime
+  const [activeCallTopicIds, setActiveCallTopicIds] = useState<Set<string>>(new Set());
+
   // Modal state
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -79,6 +82,25 @@ export default function HomePage() {
     return () => subscription.unsubscribe();
   }, [router]);
 
+  // ─── Active Call Realtime Tracking ───────────────────────────────────────────
+
+  useEffect(() => {
+    const channel = supabase.channel('active-calls');
+    channel
+      .on('broadcast', { event: 'call-state' }, ({ payload }) => {
+        const { topicId, isActive } = payload as { topicId: string; isActive: boolean };
+        setActiveCallTopicIds((prev) => {
+          const next = new Set(prev);
+          if (isActive) next.add(topicId);
+          else next.delete(topicId);
+          return next;
+        });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   // ─── Fetch Topics ───────────────────────────────────────────────────────────
 
   const fetchTopics = useCallback(async () => {
@@ -91,7 +113,7 @@ export default function HomePage() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching topics:', error);
+      console.error('Error fetching topics:', error.message, error.details, error.hint, error.code);
       setIsLoadingTopics(false);
       return;
     }
@@ -414,6 +436,7 @@ export default function HomePage() {
             isLoading={isLoadingTopics}
             currentProfile={currentProfile}
             onSignOut={handleSignOut}
+            activeCallTopicIds={activeCallTopicIds}
           />
         </div>
 
@@ -431,6 +454,7 @@ export default function HomePage() {
                 onBackMobile={() => setShowMobileChat(false)}
                 onRenameTopic={() => setIsRenameModalOpen(true)}
                 onDeleteTopic={() => setIsDeleteModalOpen(true)}
+                currentProfile={currentProfile}
                 onMemberAdded={fetchTopics}
               />
               <MessageList

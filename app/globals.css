@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+
 @theme {
   --color-app-bg: #111B21;
   --color-sidebar-bg: #202C33;
