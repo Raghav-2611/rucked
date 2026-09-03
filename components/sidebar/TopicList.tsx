@@ -88,7 +88,7 @@ export function TopicList({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#202C33] border-r border-[#2A3942]">
+    <div className="flex flex-col h-full w-full bg-[#202C33] border-r border-[#2A3942]">
       {/* User Profile / Status Bar */}
       <div className="p-3 bg-[#202C33] flex items-center justify-between border-b border-[#2A3942]">
         <div className="flex items-center gap-3">

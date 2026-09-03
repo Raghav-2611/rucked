@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { TopicMember, Role } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import { X, UserPlus, Shield, Edit3, Eye, Trash2, Check, Loader2 } from 'lucide-react';
+import { X, UserPlus, Shield, Edit3, Eye, Trash2, Loader2 } from 'lucide-react';
 
 interface MemberModalProps {
   isOpen: boolean;
@@ -31,6 +31,19 @@ export function MemberModal({
   if (!isOpen) return null;
 
   const isAdmin = myRole === 'admin';
+
+  const broadcastMemberChange = () => {
+    const channel = supabase.channel('calls-global-channel');
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        channel.send({
+          type: 'broadcast',
+          event: 'member-change',
+          payload: { topicId },
+        });
+      }
+    });
+  };
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,6 +88,7 @@ export function MemberModal({
       setSuccessMsg(`Added @${profile.username} as ${newRole}`);
       setNewUsername('');
       onMembersUpdated();
+      broadcastMemberChange();
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to add member.');
     } finally {
@@ -94,6 +108,7 @@ export function MemberModal({
 
       if (error) throw error;
       onMembersUpdated();
+      broadcastMemberChange();
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to update role.');
     }
@@ -111,6 +126,7 @@ export function MemberModal({
 
       if (error) throw error;
       onMembersUpdated();
+      broadcastMemberChange();
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to remove member.');
     }
@@ -129,7 +145,7 @@ export function MemberModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-[#8696A0] hover:text-[#E9EDEF] hover:bg-[#202C33] rounded-lg transition-colors"
+            className="p-1.5 text-[#8696A0] hover:text-[#E9EDEF] hover:bg-[#202C33] rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -194,7 +210,7 @@ export function MemberModal({
                   className="flex items-center justify-between bg-[#111B21] border border-[#2A3942] rounded-xl p-3"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-[#00A884]/20 text-[#00A884] font-bold text-xs flex items-center justify-center shrink-0 border border-[#00A884]/30">
+                    <div className="w-8 h-8 rounded-full bg-[#00A884]/20 text-[#00A884] font-bold text-xs flex items-center justify-center shrink-0 border border-[#00A884]/30 select-none">
                       {displayName[0]?.toUpperCase()}
                     </div>
                     <div className="min-w-0">
@@ -217,7 +233,7 @@ export function MemberModal({
                         </select>
                         <button
                           onClick={() => handleRemoveMember(member.user_id)}
-                          className="p-1.5 text-[#8696A0] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-[#8696A0] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
                           title="Remove Member"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

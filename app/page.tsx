@@ -86,7 +86,9 @@ export default function HomePage() {
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // ─── Active Call Realtime Global Tracking ───────────────────────────────────
+  // ─── Active Call & Member CRUD Realtime Global Tracking ─────────────────────
+
+  const fetchTopicsRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     if (!currentUser) return;
@@ -104,6 +106,10 @@ export default function HomePage() {
           else next.delete(topicId);
           return next;
         });
+      })
+      .on('broadcast', { event: 'member-change' }, () => {
+        // Re-fetch topics immediately for all users when a member is added/removed/updated
+        fetchTopicsRef.current();
       })
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
@@ -281,12 +287,18 @@ export default function HomePage() {
     if (activeTopic) {
       const updatedActive = myTopics.find((t) => t.id === activeTopic.id);
       if (updatedActive) setActiveTopic(updatedActive);
+      else if (myTopics.length > 0) setActiveTopic(myTopics[0]);
+      else setActiveTopic(null);
     } else if (myTopics.length > 0) {
       setActiveTopic(myTopics[0]);
     }
 
     setIsLoadingTopics(false);
   }, [currentUser, activeTopic]);
+
+  useEffect(() => {
+    fetchTopicsRef.current = fetchTopics;
+  }, [fetchTopics]);
 
   useEffect(() => {
     if (!isLoadingAuth && currentUser) fetchTopics();
@@ -328,7 +340,6 @@ export default function HomePage() {
   // ─── Topic Handlers ─────────────────────────────────────────────────────────
 
   const handleSelectTopic = (topic: TopicWithPreview) => {
-    // Update last read timestamp in localStorage for unread count tracking
     if (typeof window !== 'undefined') {
       localStorage.setItem(`rucked_read_${topic.id}`, new Date().toISOString());
     }
@@ -389,7 +400,6 @@ export default function HomePage() {
       }
     }
 
-    // Set initial last read timestamp
     if (typeof window !== 'undefined') {
       localStorage.setItem(`rucked_read_${createdTopic.id}`, new Date().toISOString());
     }
@@ -419,6 +429,13 @@ export default function HomePage() {
     setTopics((prev) => [newTopicWithPreview, ...prev]);
     setActiveTopic(newTopicWithPreview);
     setShowMobileChat(true);
+
+    // Broadcast member change so newly added members see the new topic immediately
+    globalCallChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'member-change',
+      payload: { topicId: createdTopic.id },
+    });
   };
 
   const handleSaveRename = async (newTitle: string) => {
@@ -453,6 +470,12 @@ export default function HomePage() {
     setIsDeleteModalOpen(false);
     setShowMobileChat(false);
     setIsProcessingModal(false);
+
+    globalCallChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'member-change',
+      payload: { topicId: activeTopic.id },
+    });
   };
 
   // ─── Statement Handlers ─────────────────────────────────────────────────────
@@ -489,7 +512,6 @@ export default function HomePage() {
         })
     );
 
-    // Update last read timestamp for current active topic
     if (typeof window !== 'undefined') {
       localStorage.setItem(`rucked_read_${activeTopic.id}`, new Date().toISOString());
     }
@@ -594,7 +616,7 @@ export default function HomePage() {
   return (
     <div className="flex flex-col h-[100dvh] w-full max-w-full overflow-hidden bg-[#111B21]">
       <div className="flex-1 flex w-full h-full overflow-hidden">
-        {/* Left Sidebar (No empty gap in laptop view) */}
+        {/* Left Sidebar - Zero Gap */}
         <div
           className={`w-full md:w-[320px] lg:w-[360px] h-full shrink-0 ${
             showMobileChat ? 'hidden md:flex' : 'flex'
@@ -612,7 +634,7 @@ export default function HomePage() {
           />
         </div>
 
-        {/* Right Chat Area */}
+        {/* Right Chat Area - Zero Gap */}
         <div
           className={`flex-1 h-full flex flex-col bg-[#0B141A] min-w-0 ${
             !showMobileChat ? 'hidden md:flex' : 'flex'

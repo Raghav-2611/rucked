@@ -66,7 +66,7 @@ export function MessageBubble({
   };
 
   return (
-    <div className={`flex mb-2 group animate-in fade-in duration-150 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+    <div className={`w-full flex mb-2 group animate-in fade-in duration-150 ${isOwn ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`relative max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 shadow-sm space-y-1 transition-all ${
           isOwn
