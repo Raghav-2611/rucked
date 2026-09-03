@@ -19,6 +19,8 @@ import {
   PhoneOff,
   Users,
   Volume2,
+  Monitor,
+  MonitorOff,
 } from 'lucide-react';
 
 interface CallModalProps {
@@ -90,7 +92,7 @@ function VoiceCallUI({ onEnd }: { onEnd: () => void }) {
       </div>
 
       {/* Controls */}
-      <div className="shrink-0 pb-10 pt-4 flex items-center justify-center gap-4 border-t border-[#2A3942]/40 bg-[#111B21]">
+      <div className="shrink-0 pb-8 pt-4 flex items-center justify-center gap-4 border-t border-[#2A3942]/40 bg-[#111B21]">
         <button
           onClick={toggleMic}
           className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg cursor-pointer ${
@@ -129,6 +131,7 @@ function VideoCallUI({ onEnd }: { onEnd: () => void }) {
   const { localParticipant } = useLocalParticipant();
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   const toggleMic = useCallback(async () => {
     const newState = !isMicMuted;
@@ -142,24 +145,35 @@ function VideoCallUI({ onEnd }: { onEnd: () => void }) {
     setIsCamOff(newState);
   }, [localParticipant, isCamOff]);
 
+  const toggleScreenShare = useCallback(async () => {
+    try {
+      const newState = !isScreenSharing;
+      await localParticipant.setScreenShareEnabled(newState);
+      setIsScreenSharing(newState);
+    } catch (err) {
+      console.error('Screen share error:', err);
+    }
+  }, [localParticipant, isScreenSharing]);
+
   const isSolo = tracks.length <= 1;
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#0B141A] overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-[#0B141A] overflow-hidden relative">
       {/* Video Grid Area */}
       <div className="flex-1 w-full h-full min-h-0 overflow-hidden flex items-center justify-center p-2 sm:p-4">
-        <div className={`w-full h-full max-h-full flex items-center justify-center ${isSolo ? 'max-w-md max-h-[70vh]' : ''}`}>
+        <div className={`w-full h-full max-h-full flex items-center justify-center ${isSolo ? 'max-w-[700px] max-h-[70vh]' : ''}`}>
           <GridLayout tracks={tracks} style={{ height: '100%', width: '100%' }}>
             <ParticipantTile />
           </GridLayout>
         </div>
       </div>
 
-      {/* Control Bar - Always Pinned at Bottom */}
-      <div className="shrink-0 py-4 px-6 bg-[#202C33] border-t border-[#2A3942] flex items-center justify-center gap-4 z-50">
+      {/* Control Bar - Always Pinned & Visible at Bottom */}
+      <div className="shrink-0 py-3.5 px-4 sm:px-6 bg-[#202C33]/95 backdrop-blur-md border-t border-[#2A3942] flex items-center justify-center gap-3 sm:gap-6 z-50">
+        {/* Mic Toggle */}
         <button
           onClick={toggleMic}
-          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all shadow-md cursor-pointer ${
+          className={`flex flex-col items-center gap-1 p-2.5 sm:p-3 rounded-xl transition-all cursor-pointer ${
             isMicMuted
               ? 'bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30'
               : 'bg-[#111B21] text-[#E9EDEF] border border-[#2A3942] hover:bg-[#2A3942]'
@@ -167,11 +181,13 @@ function VideoCallUI({ onEnd }: { onEnd: () => void }) {
           title={isMicMuted ? 'Unmute Mic' : 'Mute Mic'}
         >
           {isMicMuted ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
+          <span className="text-[10px] font-medium hidden sm:inline">{isMicMuted ? 'Muted' : 'Mic'}</span>
         </button>
 
+        {/* Cam Toggle */}
         <button
           onClick={toggleCam}
-          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all shadow-md cursor-pointer ${
+          className={`flex flex-col items-center gap-1 p-2.5 sm:p-3 rounded-xl transition-all cursor-pointer ${
             isCamOff
               ? 'bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30'
               : 'bg-[#111B21] text-[#E9EDEF] border border-[#2A3942] hover:bg-[#2A3942]'
@@ -179,14 +195,33 @@ function VideoCallUI({ onEnd }: { onEnd: () => void }) {
           title={isCamOff ? 'Turn On Camera' : 'Turn Off Camera'}
         >
           {isCamOff ? <VideoOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Video className="w-5 h-5 sm:w-6 sm:h-6" />}
+          <span className="text-[10px] font-medium hidden sm:inline">{isCamOff ? 'Cam Off' : 'Camera'}</span>
         </button>
 
+        {/* Screen Share Toggle */}
+        <button
+          onClick={toggleScreenShare}
+          className={`flex flex-col items-center gap-1 p-2.5 sm:p-3 rounded-xl transition-all cursor-pointer ${
+            isScreenSharing
+              ? 'bg-[#00A884]/20 text-[#00A884] border border-[#00A884]/40 hover:bg-[#00A884]/30'
+              : 'bg-[#111B21] text-[#E9EDEF] border border-[#2A3942] hover:bg-[#2A3942]'
+          }`}
+          title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+        >
+          {isScreenSharing ? <MonitorOff className="w-5 h-5 sm:w-6 sm:h-6 text-[#00A884]" /> : <Monitor className="w-5 h-5 sm:w-6 sm:h-6" />}
+          <span className="text-[10px] font-medium hidden sm:inline">{isScreenSharing ? 'Sharing' : 'Screen Share'}</span>
+        </button>
+
+        {/* End Call Button */}
         <button
           onClick={onEnd}
-          className="w-14 h-12 sm:w-16 sm:h-14 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30 cursor-pointer"
+          className="flex flex-col items-center justify-center p-2.5 sm:px-6 sm:py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold transition-all shadow-lg shadow-red-500/30 cursor-pointer"
           title="End Call"
         >
-          <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
+          <div className="flex items-center gap-2">
+            <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-xs font-bold hidden sm:inline">End Call</span>
+          </div>
         </button>
       </div>
     </div>
