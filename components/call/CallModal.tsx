@@ -3,15 +3,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   LiveKitRoom,
-  VideoConference,
   RoomAudioRenderer,
   useParticipants,
   useLocalParticipant,
-  useRoomContext,
+  useTracks,
+  GridLayout,
+  ParticipantTile,
 } from '@livekit/components-react';
+import { Track } from 'livekit-client';
 import {
   Mic,
   MicOff,
+  Video,
+  VideoOff,
   PhoneOff,
   Users,
   Volume2,
@@ -69,14 +73,15 @@ function VoiceCallUI({ onEnd }: { onEnd: () => void }) {
   const [isMuted, setIsMuted] = useState(false);
 
   const toggleMic = useCallback(async () => {
-    await localParticipant.setMicrophoneEnabled(isMuted);
-    setIsMuted(!isMuted);
+    const newState = !isMuted;
+    await localParticipant.setMicrophoneEnabled(!newState);
+    setIsMuted(newState);
   }, [localParticipant, isMuted]);
 
   return (
     <div className="flex flex-col h-full bg-[#111B21]">
       {/* Participants grid */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto">
         <div className="flex flex-wrap gap-10 justify-center max-w-2xl">
           {participants.map((p) => (
             <VoiceParticipant key={p.identity} participant={p} />
@@ -85,10 +90,10 @@ function VoiceCallUI({ onEnd }: { onEnd: () => void }) {
       </div>
 
       {/* Controls */}
-      <div className="pb-10 flex items-center justify-center gap-4">
+      <div className="shrink-0 pb-10 pt-4 flex items-center justify-center gap-4 border-t border-[#2A3942]/40 bg-[#111B21]">
         <button
           onClick={toggleMic}
-          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg ${
+          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg cursor-pointer ${
             isMuted
               ? 'bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30'
               : 'bg-[#202C33] text-[#E9EDEF] border border-[#2A3942] hover:bg-[#2A3942]'
@@ -100,7 +105,7 @@ function VoiceCallUI({ onEnd }: { onEnd: () => void }) {
 
         <button
           onClick={onEnd}
-          className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30"
+          className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30 cursor-pointer"
           title="End Call"
         >
           <PhoneOff className="w-7 h-7" />
@@ -113,15 +118,75 @@ function VoiceCallUI({ onEnd }: { onEnd: () => void }) {
 // ─── Video Call UI ────────────────────────────────────────────────────────────
 
 function VideoCallUI({ onEnd }: { onEnd: () => void }) {
+  const tracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false }
+  );
+
+  const { localParticipant } = useLocalParticipant();
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isCamOff, setIsCamOff] = useState(false);
+
+  const toggleMic = useCallback(async () => {
+    const newState = !isMicMuted;
+    await localParticipant.setMicrophoneEnabled(!newState);
+    setIsMicMuted(newState);
+  }, [localParticipant, isMicMuted]);
+
+  const toggleCam = useCallback(async () => {
+    const newState = !isCamOff;
+    await localParticipant.setCameraEnabled(!newState);
+    setIsCamOff(newState);
+  }, [localParticipant, isCamOff]);
+
+  const isSolo = tracks.length <= 1;
+
   return (
-    <div className="relative h-full bg-[#111B21]">
-      <VideoConference />
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50">
+    <div className="flex flex-col h-full w-full bg-[#0B141A] overflow-hidden">
+      {/* Video Grid Area */}
+      <div className="flex-1 w-full h-full min-h-0 overflow-hidden flex items-center justify-center p-2 sm:p-4">
+        <div className={`w-full h-full max-h-full flex items-center justify-center ${isSolo ? 'max-w-md max-h-[70vh]' : ''}`}>
+          <GridLayout tracks={tracks} style={{ height: '100%', width: '100%' }}>
+            <ParticipantTile />
+          </GridLayout>
+        </div>
+      </div>
+
+      {/* Control Bar - Always Pinned at Bottom */}
+      <div className="shrink-0 py-4 px-6 bg-[#202C33] border-t border-[#2A3942] flex items-center justify-center gap-4 z-50">
+        <button
+          onClick={toggleMic}
+          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all shadow-md cursor-pointer ${
+            isMicMuted
+              ? 'bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30'
+              : 'bg-[#111B21] text-[#E9EDEF] border border-[#2A3942] hover:bg-[#2A3942]'
+          }`}
+          title={isMicMuted ? 'Unmute Mic' : 'Mute Mic'}
+        >
+          {isMicMuted ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
+        </button>
+
+        <button
+          onClick={toggleCam}
+          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all shadow-md cursor-pointer ${
+            isCamOff
+              ? 'bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30'
+              : 'bg-[#111B21] text-[#E9EDEF] border border-[#2A3942] hover:bg-[#2A3942]'
+          }`}
+          title={isCamOff ? 'Turn On Camera' : 'Turn Off Camera'}
+        >
+          {isCamOff ? <VideoOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Video className="w-5 h-5 sm:w-6 sm:h-6" />}
+        </button>
+
         <button
           onClick={onEnd}
-          className="px-6 py-3 rounded-full bg-red-500 hover:bg-red-600 text-white font-semibold text-sm flex items-center gap-2 shadow-lg shadow-red-500/30 transition-all"
+          className="w-14 h-12 sm:w-16 sm:h-14 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30 cursor-pointer"
+          title="End Call"
         >
-          <PhoneOff className="w-4 h-4" /> End Call
+          <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
       </div>
     </div>
@@ -137,7 +202,7 @@ export function CallModal({ isOpen, topicTitle, token, mode, onDisconnect }: Cal
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#111B21]">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-[#111B21] overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3.5 bg-[#202C33] border-b border-[#2A3942] shrink-0">
         <div className="flex items-center gap-3">
@@ -157,7 +222,7 @@ export function CallModal({ isOpen, topicTitle, token, mode, onDisconnect }: Cal
       </div>
 
       {/* LiveKit Room */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <LiveKitRoom
           token={token}
           serverUrl={wsUrl}
@@ -165,7 +230,7 @@ export function CallModal({ isOpen, topicTitle, token, mode, onDisconnect }: Cal
           audio={true}
           video={mode === 'video'}
           onDisconnected={onDisconnect}
-          style={{ height: '100%' }}
+          style={{ height: '100%', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}
         >
           <RoomAudioRenderer />
           <ParticipantCounter onCount={setParticipantCount} />

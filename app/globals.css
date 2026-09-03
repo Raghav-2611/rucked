@@ -61,3 +61,32 @@ html, body {
   background-image: radial-gradient(#182229 1px, transparent 1px);
   background-size: 20px 20px;
 }
+
+/* ─── LiveKit Frame Auto-Adjustment Fixes ─── */
+.lk-grid-layout {
+  height: 100% !important;
+  width: 100% !important;
+  max-height: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  padding: 8px !important;
+  gap: 12px !important;
+}
+
+.lk-participant-tile {
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  background-color: #111B21 !important;
+  border: 1px solid #2A3942 !important;
+  max-height: 100% !important;
+  position: relative !important;
+}
+
+.lk-participant-tile video,
+.lk-video-container video {
+  object-fit: contain !important; /* Prevents portrait mobile videos from expanding grid cell height */
+  background-color: #000000 !important;
+  max-height: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+}
