@@ -200,8 +200,11 @@ function VoiceCallUI({ onEnd }: { onEnd: () => void }) {
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="shrink-0 pb-8 pt-4 flex items-center justify-center gap-4 border-t border-[#2A3942]/40 bg-[#111B21]">
+        {/* Controls with mobile safe area padding */}
+        <div
+          className="shrink-0 pt-4 px-6 border-t border-[#2A3942]/40 bg-[#111B21] flex items-center justify-center gap-4 z-50"
+          style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))' }}
+        >
           <button
             onClick={toggleMic}
             className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg cursor-pointer ${
@@ -295,15 +298,18 @@ function VideoCallUI({ onEnd }: { onEnd: () => void }) {
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
         {/* Video Grid Area */}
         <div className="flex-1 w-full h-full min-h-0 overflow-hidden flex items-center justify-center p-2 sm:p-4">
-          <div className={`w-full h-full max-h-full flex items-center justify-center ${isSolo ? 'max-w-[700px] max-h-[70vh]' : ''}`}>
+          <div className={`w-full h-full max-h-full flex items-center justify-center ${isSolo ? 'max-w-[700px] max-h-[65vh]' : ''}`}>
             <GridLayout tracks={tracks} style={{ height: '100%', width: '100%' }}>
               <ParticipantTile />
             </GridLayout>
           </div>
         </div>
 
-        {/* Control Bar - Always Pinned & Visible at Bottom */}
-        <div className="shrink-0 py-3.5 px-4 sm:px-6 bg-[#202C33]/95 backdrop-blur-md border-t border-[#2A3942] flex items-center justify-center gap-3 sm:gap-6 z-50">
+        {/* Control Bar - Always Pinned & Elevated Above Mobile Navigation Bar */}
+        <div
+          className="shrink-0 pt-3 px-4 sm:px-6 bg-[#202C33]/95 backdrop-blur-md border-t border-[#2A3942] flex items-center justify-center gap-3 sm:gap-6 z-50"
+          style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom, 1.25rem))' }}
+        >
           {/* Mic Toggle */}
           <button
             onClick={toggleMic}
@@ -399,7 +405,7 @@ export function CallModal({ isOpen, topicTitle, token, mode, onDisconnect }: Cal
   if (!isOpen || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex flex-col bg-[#111B21] overflow-hidden w-screen h-screen">
+    <div className="fixed inset-0 z-[99999] flex flex-col bg-[#111B21] overflow-hidden w-full h-[100dvh]">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3.5 bg-[#202C33] border-b border-[#2A3942] shrink-0">
         <div className="flex items-center gap-3">
