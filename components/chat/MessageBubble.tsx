@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Statement } from '@/lib/types';
 import { formatStatementTimestamp } from '@/lib/utils';
-import { Edit2, Trash2, Check, X } from 'lucide-react';
+import { Edit2, Trash2, Check, X, Copy, CheckCheck } from 'lucide-react';
 
 interface MessageBubbleProps {
   statement: Statement;
@@ -15,7 +15,7 @@ interface MessageBubbleProps {
 
 export function MessageBubble({
   statement,
-  isOwn = true,
+  isOwn = false,
   showSenderName = false,
   onEdit,
   onDelete,
@@ -23,10 +23,10 @@ export function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(statement.content);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const timestamp = formatStatementTimestamp(statement.created_at);
 
-  // Check if message was created within the last 1 hour (60 minutes)
   const isEditable = React.useMemo(() => {
     if (!statement.created_at) return true;
     const createdAtTime = new Date(statement.created_at).getTime();
@@ -36,7 +36,13 @@ export function MessageBubble({
   }, [statement.created_at]);
 
   const senderName =
-    statement.sender?.display_name || statement.sender?.username || 'Unknown';
+    statement.sender?.display_name || statement.sender?.username || 'Member';
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(statement.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleSaveEdit = async () => {
     if (!editContent.trim() || isSubmitting) return;
@@ -60,45 +66,64 @@ export function MessageBubble({
   };
 
   return (
-    <div className={`flex mb-1.5 group animate-in fade-in duration-150 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex mb-2 group animate-in fade-in duration-150 ${isOwn ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`relative max-w-[88%] sm:max-w-[72%] rounded-2xl p-3 shadow-md space-y-1.5 transition-all ${
+        className={`relative max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 shadow-sm space-y-1 transition-all ${
           isOwn
             ? 'bg-[#005C4B] text-[#E9EDEF] border border-[#006052]/60 rounded-tr-xs'
             : 'bg-[#202C33] text-[#E9EDEF] border border-[#2A3942]/60 rounded-tl-xs hover:border-[#2A3942]'
         }`}
       >
-        {/* Sender Name (shown in group for non-own messages) */}
-        {showSenderName && (
-          <p className="text-[11px] font-semibold text-[#00A884] mb-1 -mt-0.5">
+        {/* Sender Name */}
+        {showSenderName && !isOwn && (
+          <p className="text-[11px] font-bold text-[#00A884] mb-0.5">
             {senderName}
           </p>
         )}
 
-        {/* Actions (only for own messages: Edit allowed < 1 hr, Delete allowed anytime) */}
-        {isOwn && !isEditing && (
-          <div className="absolute top-1.5 left-1.5 opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-[#111B21]/95 rounded-lg p-1 border border-[#2A3942] backdrop-blur-xs shadow-md z-10">
-            {isEditable && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditContent(statement.content);
-                  setIsEditing(true);
-                }}
-                className="p-1 text-[#8696A0] hover:text-[#00A884] transition-colors cursor-pointer"
-                title="Edit message (within 1 hour)"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-              </button>
-            )}
+        {/* Message Action Toolbar (Hover on Desktop, Always accessible) */}
+        {!isEditing && (
+          <div
+            className={`absolute top-1.5 ${
+              isOwn ? 'left-1.5' : 'right-1.5'
+            } opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-[#111B21]/95 rounded-lg p-1 border border-[#2A3942] backdrop-blur-xs shadow-md z-10`}
+          >
+            {/* Copy Button */}
             <button
               type="button"
-              onClick={() => onDelete(statement.id)}
-              className="p-1 text-[#8696A0] hover:text-red-400 transition-colors cursor-pointer"
-              title="Delete message"
+              onClick={handleCopy}
+              className="p-1 text-[#8696A0] hover:text-[#00A884] transition-colors cursor-pointer"
+              title="Copy statement"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              {copied ? <CheckCheck className="w-3.5 h-3.5 text-[#00A884]" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
+
+            {/* Edit & Delete (Own messages only) */}
+            {isOwn && (
+              <>
+                {isEditable && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditContent(statement.content);
+                      setIsEditing(true);
+                    }}
+                    className="p-1 text-[#8696A0] hover:text-[#00A884] transition-colors cursor-pointer"
+                    title="Edit statement"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onDelete(statement.id)}
+                  className="p-1 text-[#8696A0] hover:text-red-400 transition-colors cursor-pointer"
+                  title="Delete statement"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -133,17 +158,16 @@ export function MessageBubble({
             </div>
           </div>
         ) : (
-          <div className={`text-sm font-normal text-[#E9EDEF] whitespace-pre-wrap leading-relaxed break-words ${isOwn ? 'pl-1' : 'pr-8'}`}>
+          <div className="text-sm font-normal text-[#E9EDEF] whitespace-pre-wrap leading-relaxed break-words pr-2">
             {statement.content}
           </div>
         )}
 
         {/* Timestamp */}
-        <div className={`flex items-center gap-1.5 text-[10px] text-[#8696A0] pt-0.5 ${isOwn ? 'justify-start' : 'justify-end'}`}>
+        <div className={`flex items-center gap-1.5 text-[10px] text-[#8696A0] pt-0.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
           <span>{timestamp}</span>
         </div>
       </div>
     </div>
   );
 }
-

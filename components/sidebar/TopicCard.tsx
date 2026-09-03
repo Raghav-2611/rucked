@@ -20,6 +20,7 @@ export function TopicCard({ topic, isActive, isCallActive = false, onSelect }: T
     : (topic.dm_peer?.display_name || topic.dm_peer?.username || topic.title);
 
   const initial = displayTitle?.[0]?.toUpperCase() || '?';
+  const unreadCount = topic.unreadCount || 0;
 
   return (
     <button
@@ -52,7 +53,7 @@ export function TopicCard({ topic, isActive, isCallActive = false, onSelect }: T
         {/* Active call badge */}
         {isCallActive && (
           <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#00A884] rounded-full flex items-center justify-center ring-2 ring-[#202C33]">
-            <Phone className="w-2.5 h-2.5 text-white" />
+            <Phone className="w-2.5 h-2.5 text-white animate-pulse" />
           </span>
         )}
       </div>
@@ -75,14 +76,14 @@ export function TopicCard({ topic, isActive, isCallActive = false, onSelect }: T
             )}
           </div>
           {timestamp && (
-            <span className="text-[11px] font-medium text-[#8696A0] shrink-0">
+            <span className={`text-[11px] font-medium shrink-0 ${unreadCount > 0 && !isActive ? 'text-[#00A884] font-bold' : 'text-[#8696A0]'}`}>
               {timestamp}
             </span>
           )}
         </div>
 
         <div className="flex items-center justify-between gap-2 mt-1">
-          <p className="text-xs text-[#8696A0] truncate">
+          <p className={`text-xs truncate ${unreadCount > 0 && !isActive ? 'text-[#E9EDEF] font-medium' : 'text-[#8696A0]'}`}>
             {isCallActive
               ? 'Call in progress...'
               : topic.lastStatementPreview
@@ -90,15 +91,10 @@ export function TopicCard({ topic, isActive, isCallActive = false, onSelect }: T
               : 'No messages yet'}
           </p>
 
-          {typeof topic.statementCount === 'number' && topic.statementCount > 0 && (
-            <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${
-                isActive
-                  ? 'bg-[#00A884]/20 text-[#00A884]'
-                  : 'bg-[#2A3942] text-[#8696A0]'
-              }`}
-            >
-              {topic.statementCount}
+          {/* Unseen / Unread Chat Count Badge */}
+          {unreadCount > 0 && !isActive && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#00A884] text-white shrink-0 shadow-sm animate-in zoom-in-50 duration-150">
+              {unreadCount}
             </span>
           )}
         </div>

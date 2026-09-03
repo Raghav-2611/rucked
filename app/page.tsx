@@ -132,7 +132,6 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeTopic) return;
 
-    // Remove previous topic channel if any
     if (chatChannelRef.current) {
       supabase.removeChannel(chatChannelRef.current);
     }
@@ -154,6 +153,7 @@ export default function HomePage() {
                     statementCount: (t.statementCount || 0) + 1,
                     lastStatementPreview: payload.content,
                     lastActivityAt: payload.created_at,
+                    unreadCount: 0,
                   }
                 : t
             )
@@ -239,10 +239,23 @@ export default function HomePage() {
           myRole = 'edit';
         }
 
+        // Calculate Unread Count for this topic using localStorage last-read timestamp
+        let unreadCount = 0;
+        const lastReadStr = typeof window !== 'undefined' ? localStorage.getItem(`rucked_read_${t.id}`) : null;
+        if (lastReadStr) {
+          const { count: unread } = await supabase
+            .from('statements')
+            .select('id', { count: 'exact', head: true })
+            .eq('topic_id', t.id)
+            .gt('created_at', lastReadStr);
+          unreadCount = unread ?? 0;
+        }
+
         const lastStmt = stmts?.[0];
         return {
           ...t,
           statementCount: count ?? 0,
+          unreadCount: activeTopic?.id === t.id ? 0 : unreadCount,
           lastStatementPreview: lastStmt?.content,
           lastActivityAt: lastStmt?.created_at ?? t.created_at,
           members: formattedMembers,
@@ -252,19 +265,24 @@ export default function HomePage() {
       })
     );
 
-    enhanced.sort((a, b) => {
+    // Requirement 5: Filter topics to ONLY show topics the user is in (creator or member)
+    const myTopics = enhanced.filter(
+      (t) => t.created_by === currentUser.id || t.members?.some((m) => m.user_id === currentUser.id)
+    );
+
+    myTopics.sort((a, b) => {
       const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
       const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
       return timeB - timeA;
     });
 
-    setTopics(enhanced);
+    setTopics(myTopics);
 
     if (activeTopic) {
-      const updatedActive = enhanced.find((t) => t.id === activeTopic.id);
+      const updatedActive = myTopics.find((t) => t.id === activeTopic.id);
       if (updatedActive) setActiveTopic(updatedActive);
-    } else if (enhanced.length > 0) {
-      setActiveTopic(enhanced[0]);
+    } else if (myTopics.length > 0) {
+      setActiveTopic(myTopics[0]);
     }
 
     setIsLoadingTopics(false);
@@ -310,7 +328,15 @@ export default function HomePage() {
   // ─── Topic Handlers ─────────────────────────────────────────────────────────
 
   const handleSelectTopic = (topic: TopicWithPreview) => {
-    setActiveTopic(topic);
+    // Update last read timestamp in localStorage for unread count tracking
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`rucked_read_${topic.id}`, new Date().toISOString());
+    }
+
+    setTopics((prev) =>
+      prev.map((t) => (t.id === topic.id ? { ...t, unreadCount: 0 } : t))
+    );
+    setActiveTopic({ ...topic, unreadCount: 0 });
     setShowMobileChat(true);
   };
 
@@ -363,6 +389,11 @@ export default function HomePage() {
       }
     }
 
+    // Set initial last read timestamp
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`rucked_read_${createdTopic.id}`, new Date().toISOString());
+    }
+
     const newTopicWithPreview: TopicWithPreview = {
       id: createdTopic.id,
       title: createdTopic.title,
@@ -370,6 +401,7 @@ export default function HomePage() {
       is_group: isGroup,
       created_by: currentUser.id,
       statementCount: 0,
+      unreadCount: 0,
       lastActivityAt: createdTopic.created_at,
       members: [
         {
@@ -446,6 +478,7 @@ export default function HomePage() {
                 statementCount: (t.statementCount || 0) + 1,
                 lastStatementPreview: content,
                 lastActivityAt: data.created_at,
+                unreadCount: 0,
               }
             : t
         )
@@ -455,6 +488,11 @@ export default function HomePage() {
           return timeB - timeA;
         })
     );
+
+    // Update last read timestamp for current active topic
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`rucked_read_${activeTopic.id}`, new Date().toISOString());
+    }
 
     chatChannelRef.current?.send({
       type: 'broadcast',
@@ -556,9 +594,9 @@ export default function HomePage() {
   return (
     <div className="flex flex-col h-[100dvh] w-full max-w-full overflow-hidden bg-[#111B21]">
       <div className="flex-1 flex w-full h-full overflow-hidden">
-        {/* Left Sidebar */}
+        {/* Left Sidebar (No empty gap in laptop view) */}
         <div
-          className={`w-full md:w-[30%] lg:w-[28%] xl:w-[25%] h-full shrink-0 ${
+          className={`w-full md:w-[320px] lg:w-[360px] h-full shrink-0 ${
             showMobileChat ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -576,7 +614,7 @@ export default function HomePage() {
 
         {/* Right Chat Area */}
         <div
-          className={`w-full md:w-[70%] lg:w-[72%] xl:w-[75%] h-full flex flex-col bg-[#0B141A] ${
+          className={`flex-1 h-full flex flex-col bg-[#0B141A] min-w-0 ${
             !showMobileChat ? 'hidden md:flex' : 'flex'
           }`}
         >

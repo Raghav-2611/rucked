@@ -37,6 +37,7 @@ export interface TopicWithPreview extends Topic {
   lastStatementPreview?: string;
   lastActivityAt?: string;
   statementCount?: number;
+  unreadCount?: number;
   members?: TopicMember[];
   myRole?: Role;
   dm_peer?: Profile | null;
