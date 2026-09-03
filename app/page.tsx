@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Topic, Statement, TopicWithPreview, Profile, TopicMember, Role } from '@/lib/types';
@@ -32,13 +32,17 @@ export default function HomePage() {
   const [isLoadingStatements, setIsLoadingStatements] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
 
-  // Active calls — tracks which topic IDs have a live call via Supabase Realtime
+  // Active calls — tracks which topic IDs have a live call
   const [activeCallTopicIds, setActiveCallTopicIds] = useState<Set<string>>(new Set());
 
   // Modal state
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isProcessingModal, setIsProcessingModal] = useState(false);
+
+  // Realtime channel references
+  const chatChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const globalCallChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // ─── Auth Guard ─────────────────────────────────────────────────────────────
 
@@ -54,29 +58,20 @@ export default function HomePage() {
       setCurrentUser(session.user);
 
       // Fetch profile (username)
-      let currentProf: Profile | null = null;
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
         .single();
 
-      if (profile) {
-        currentProf = profile;
-      } else {
-        // Fallback: create profile if DB trigger was skipped
-        const fallbackUsername = session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'user';
-        currentProf = {
-          id: session.user.id,
-          username: fallbackUsername,
-          display_name: session.user.user_metadata?.display_name || fallbackUsername,
-          avatar_url: session.user.user_metadata?.avatar_url || null,
-          created_at: session.user.created_at || new Date().toISOString(),
-        };
-        await supabase.from('profiles').upsert([currentProf], { onConflict: 'id' });
-      }
+      setCurrentProfile(profile ?? {
+        id: session.user.id,
+        username: session.user.email?.split('@')[0] ?? 'user',
+        display_name: null,
+        avatar_url: null,
+        created_at: session.user.created_at,
+      });
 
-      setCurrentProfile(currentProf);
       setIsLoadingAuth(false);
     };
 
@@ -91,10 +86,15 @@ export default function HomePage() {
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // ─── Active Call Realtime Tracking ───────────────────────────────────────────
+  // ─── Active Call Realtime Global Tracking ───────────────────────────────────
 
   useEffect(() => {
-    const channel = supabase.channel('active-calls');
+    if (!currentUser) return;
+
+    const channel = supabase.channel('calls-global-channel', {
+      config: { presence: { key: currentUser.id } },
+    });
+
     channel
       .on('broadcast', { event: 'call-state' }, ({ payload }) => {
         const { topicId, isActive } = payload as { topicId: string; isActive: boolean };
@@ -105,10 +105,84 @@ export default function HomePage() {
           return next;
         });
       })
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const activeTopics = new Set<string>();
+        Object.values(state).forEach((presences: any) => {
+          presences.forEach((p: any) => {
+            if (p.topicId) activeTopics.add(p.topicId);
+          });
+        });
+        setActiveCallTopicIds((prev) => {
+          const combined = new Set([...Array.from(prev), ...Array.from(activeTopics)]);
+          return combined;
+        });
+      })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    globalCallChannelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser]);
+
+  // ─── Realtime Chat Subscription for Active Topic ─────────────────────────────
+
+  useEffect(() => {
+    if (!activeTopic) return;
+
+    // Remove previous topic channel if any
+    if (chatChannelRef.current) {
+      supabase.removeChannel(chatChannelRef.current);
+    }
+
+    const channel = supabase.channel(`topic-${activeTopic.id}`);
+
+    channel
+      .on('broadcast', { event: 'new-statement' }, ({ payload }) => {
+        setStatements((prev) => {
+          if (prev.some((s) => s.id === payload.id)) return prev;
+          return [...prev, payload];
+        });
+        setTopics((prev) =>
+          prev
+            .map((t) =>
+              t.id === activeTopic.id
+                ? {
+                    ...t,
+                    statementCount: (t.statementCount || 0) + 1,
+                    lastStatementPreview: payload.content,
+                    lastActivityAt: payload.created_at,
+                  }
+                : t
+            )
+            .sort((a, b) => {
+              const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
+              const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
+              return timeB - timeA;
+            })
+        );
+      })
+      .on('broadcast', { event: 'edit-statement' }, ({ payload }) => {
+        setStatements((prev) =>
+          prev.map((s) => (s.id === payload.id ? { ...s, content: payload.content } : s))
+        );
+      })
+      .on('broadcast', { event: 'delete-statement' }, ({ payload }) => {
+        setStatements((prev) => prev.filter((s) => s.id !== payload.id));
+      })
+      .subscribe();
+
+    chatChannelRef.current = channel;
+
+    return () => {
+      if (chatChannelRef.current) {
+        supabase.removeChannel(chatChannelRef.current);
+        chatChannelRef.current = null;
+      }
+    };
+  }, [activeTopic]);
 
   // ─── Fetch Topics ───────────────────────────────────────────────────────────
 
@@ -186,7 +260,6 @@ export default function HomePage() {
 
     setTopics(enhanced);
 
-    // Keep current active topic updated with fresh data if present
     if (activeTopic) {
       const updatedActive = enhanced.find((t) => t.id === activeTopic.id);
       if (updatedActive) setActiveTopic(updatedActive);
@@ -227,130 +300,6 @@ export default function HomePage() {
     else setStatements([]);
   }, [activeTopic, fetchStatements]);
 
-  const chatChannelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const activeTopicRef = React.useRef<TopicWithPreview | null>(null);
-
-  useEffect(() => {
-    activeTopicRef.current = activeTopic;
-  }, [activeTopic]);
-
-  // ─── Realtime Subscriptions (Broadcast & Postgres Changes) ─────────────────
-
-  useEffect(() => {
-    if (!currentUser) return;
-
-    // Unified Realtime Channel for instant WebSocket Broadcast + Postgres Changes fallback
-    const channel = supabase.channel('rucked-live-chat');
-
-    channel
-      // 1. Broadcast event listeners (< 10ms instant peer-to-peer WebSocket messaging)
-      .on('broadcast', { event: 'new-statement' }, ({ payload }) => {
-        const newStmt = payload as Statement;
-        if (activeTopicRef.current && newStmt.topic_id === activeTopicRef.current.id) {
-          setStatements((prev) => {
-            if (prev.some((s) => s.id === newStmt.id)) return prev;
-            return [...prev, newStmt];
-          });
-        }
-        setTopics((prev) =>
-          prev
-            .map((t) =>
-              t.id === newStmt.topic_id
-                ? {
-                    ...t,
-                    statementCount: (t.statementCount || 0) + 1,
-                    lastStatementPreview: newStmt.content,
-                    lastActivityAt: newStmt.created_at,
-                  }
-                : t
-            )
-            .sort((a, b) => {
-              const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
-              const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
-              return timeB - timeA;
-            })
-        );
-      })
-      .on('broadcast', { event: 'edit-statement' }, ({ payload }) => {
-        const { id, content, topic_id } = payload;
-        if (activeTopicRef.current && topic_id === activeTopicRef.current.id) {
-          setStatements((prev) =>
-            prev.map((s) => (s.id === id ? { ...s, content } : s))
-          );
-        }
-        setTopics((prev) =>
-          prev.map((t) => (t.id === topic_id ? { ...t, lastStatementPreview: content } : t))
-        );
-      })
-      .on('broadcast', { event: 'delete-statement' }, ({ payload }) => {
-        const { id, topic_id } = payload;
-        if (activeTopicRef.current && topic_id === activeTopicRef.current.id) {
-          setStatements((prev) => prev.filter((s) => s.id !== id));
-        }
-      })
-      .on('broadcast', { event: 'new-topic' }, () => {
-        fetchTopics();
-      })
-      .on('broadcast', { event: 'call-state' }, ({ payload }) => {
-        const { topicId, isActive } = payload as { topicId: string; isActive: boolean };
-        setActiveCallTopicIds((prev) => {
-          const next = new Set(prev);
-          if (isActive) next.add(topicId);
-          else next.delete(topicId);
-          return next;
-        });
-      })
-      // 2. Database WAL Change Listeners
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'statements' },
-        (payload) => {
-          const newStmt = payload.new as Statement;
-          if (activeTopicRef.current && newStmt.topic_id === activeTopicRef.current.id) {
-            setStatements((prev) => {
-              if (prev.some((s) => s.id === newStmt.id)) return prev;
-              return [...prev, newStmt];
-            });
-          }
-          setTopics((prev) =>
-            prev
-              .map((t) =>
-                t.id === newStmt.topic_id
-                  ? {
-                      ...t,
-                      statementCount: (t.statementCount || 0) + 1,
-                      lastStatementPreview: newStmt.content,
-                      lastActivityAt: newStmt.created_at,
-                    }
-                  : t
-              )
-              .sort((a, b) => {
-                const timeA = new Date(a.lastActivityAt || a.created_at).getTime();
-                const timeB = new Date(b.lastActivityAt || b.created_at).getTime();
-                return timeB - timeA;
-              })
-          );
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'topics' },
-        () => {
-          fetchTopics();
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          chatChannelRef.current = channel;
-        }
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-      chatChannelRef.current = null;
-    };
-  }, [currentUser, fetchTopics]);
-
   // ─── Sign Out ───────────────────────────────────────────────────────────────
 
   const handleSignOut = async () => {
@@ -368,106 +317,76 @@ export default function HomePage() {
   const handleCreateTopic = async (title: string, isGroup: boolean = false, memberUsernames: string[] = []) => {
     if (!currentUser) return;
 
-    try {
-      let createdTopic: Topic | null = null;
+    // 1. Insert Topic
+    const { data: createdTopic, error: createTopicErr } = await supabase
+      .from('topics')
+      .insert([{ title, is_group: isGroup, created_by: currentUser.id }])
+      .select()
+      .single();
 
-      // 1. Insert Topic with fallback if schema columns are missing
-      const { data: newTopic, error } = await supabase
-        .from('topics')
-        .insert([{ title, is_group: isGroup, created_by: currentUser.id }])
-        .select()
-        .single();
+    if (createTopicErr || !createdTopic) {
+      console.error('Error creating topic:', createTopicErr?.message || createTopicErr);
+      return;
+    }
 
-      if (error) {
-        console.warn('Primary topic insert failed, attempting fallback (title only):', error.message);
-        // Fallback for older database schemas without is_group / created_by columns
-        const { data: fallbackTopic, error: fallbackError } = await supabase
-          .from('topics')
-          .insert([{ title }])
-          .select()
+    // 2. Add creator as Admin in topic_members
+    const { error: memberErr } = await supabase.from('topic_members').insert([
+      {
+        topic_id: createdTopic.id,
+        user_id: currentUser.id,
+        role: 'admin',
+      },
+    ]);
+    if (memberErr) {
+      console.warn('Could not insert admin member record:', memberErr.message);
+    }
+
+    // 3. Add specified members by username
+    if (memberUsernames && memberUsernames.length > 0) {
+      for (const username of memberUsernames) {
+        const { data: p } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('username', username)
           .single();
 
-        if (fallbackError) {
-          console.error('Fallback topic insert also failed:', fallbackError);
-          alert(`Failed to create topic: ${fallbackError.message || error.message}`);
-          return;
+        if (p && p.id !== currentUser.id) {
+          const { error: addErr } = await supabase.from('topic_members').insert([
+            {
+              topic_id: createdTopic.id,
+              user_id: p.id,
+              role: 'edit',
+            },
+          ]);
+          if (addErr) console.warn(`Could not add member @${username}:`, addErr.message);
         }
-        createdTopic = fallbackTopic;
-      } else {
-        createdTopic = newTopic;
       }
+    }
 
-      if (!createdTopic) {
-        alert('Failed to create topic: Database returned no data.');
-        return;
-      }
-
-      // 2. Add creator as Admin in topic_members (ignore error if table/column missing)
-      const { error: memberErr } = await supabase.from('topic_members').insert([
+    const newTopicWithPreview: TopicWithPreview = {
+      id: createdTopic.id,
+      title: createdTopic.title,
+      created_at: createdTopic.created_at,
+      is_group: isGroup,
+      created_by: currentUser.id,
+      statementCount: 0,
+      lastActivityAt: createdTopic.created_at,
+      members: [
         {
           topic_id: createdTopic.id,
           user_id: currentUser.id,
           role: 'admin',
+          created_at: new Date().toISOString(),
+          profile: currentProfile,
         },
-      ]);
-      if (memberErr) {
-        console.warn('Could not insert admin member record:', memberErr.message);
-      }
+      ],
+      myRole: 'admin',
+      dm_peer: null,
+    };
 
-      // 3. Add specified members by username
-      if (memberUsernames && memberUsernames.length > 0) {
-        for (const username of memberUsernames) {
-          const { data: p } = await supabase
-            .from('profiles')
-            .select('id')
-            .ilike('username', username)
-            .single();
-
-          if (p && p.id !== currentUser.id) {
-            const { error: addErr } = await supabase.from('topic_members').insert([
-              {
-                topic_id: createdTopic.id,
-                user_id: p.id,
-                role: 'edit',
-              },
-            ]);
-            if (addErr) console.warn(`Could not add member @${username}:`, addErr.message);
-          }
-        }
-      }
-
-      // Prepend to local state immediately so UI updates zero-delay
-      const newTopicWithPreview: TopicWithPreview = {
-        id: createdTopic.id,
-        title: createdTopic.title,
-        created_at: createdTopic.created_at,
-        is_group: isGroup,
-        created_by: currentUser.id,
-        statementCount: 0,
-        lastActivityAt: createdTopic.created_at,
-        members: [
-          {
-            topic_id: createdTopic.id,
-            user_id: currentUser.id,
-            role: 'admin',
-            created_at: new Date().toISOString(),
-            profile: currentProfile,
-          },
-        ],
-        myRole: 'admin',
-        dm_peer: null,
-      };
-
-      setTopics((prev) => [newTopicWithPreview, ...prev.filter((t) => t.id !== createdTopic!.id)]);
-      setActiveTopic(newTopicWithPreview);
-      setShowMobileChat(true);
-
-      // Re-fetch in background to sync full server state
-      fetchTopics();
-    } catch (err: any) {
-      console.error('Error creating topic:', err);
-      alert(`Error creating topic: ${err?.message || 'Unknown error'}`);
-    }
+    setTopics((prev) => [newTopicWithPreview, ...prev]);
+    setActiveTopic(newTopicWithPreview);
+    setShowMobileChat(true);
   };
 
   const handleSaveRename = async (newTitle: string) => {
@@ -568,7 +487,7 @@ export default function HomePage() {
     chatChannelRef.current?.send({
       type: 'broadcast',
       event: 'edit-statement',
-      payload: { id: statementId, content: newContent, topic_id: activeTopic?.id },
+      payload: { id: statementId, content: newContent },
     });
   };
 
@@ -599,6 +518,29 @@ export default function HomePage() {
     });
   };
 
+  // ─── Call State Handler ────────────────────────────────────────────────────
+
+  const handleCallStateChange = (topicId: string, isActive: boolean) => {
+    setActiveCallTopicIds((prev) => {
+      const next = new Set(prev);
+      if (isActive) next.add(topicId);
+      else next.delete(topicId);
+      return next;
+    });
+
+    if (isActive && currentUser) {
+      globalCallChannelRef.current?.track({ topicId, userId: currentUser.id });
+    } else {
+      globalCallChannelRef.current?.untrack();
+    }
+
+    globalCallChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'call-state',
+      payload: { topicId, isActive },
+    });
+  };
+
   // ─── Loading screen ─────────────────────────────────────────────────────────
 
   if (isLoadingAuth) {
@@ -610,21 +552,6 @@ export default function HomePage() {
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
-
-  const handleCallStateChange = (topicId: string, isActive: boolean) => {
-    setActiveCallTopicIds((prev) => {
-      const next = new Set(prev);
-      if (isActive) next.add(topicId);
-      else next.delete(topicId);
-      return next;
-    });
-
-    chatChannelRef.current?.send({
-      type: 'broadcast',
-      event: 'call-state',
-      payload: { topicId, isActive },
-    });
-  };
 
   return (
     <div className="flex flex-col h-[100dvh] w-full max-w-full overflow-hidden bg-[#111B21]">
