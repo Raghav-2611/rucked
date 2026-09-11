@@ -5,11 +5,13 @@ import { TopicWithPreview, Profile } from '@/lib/types';
 import { TopicCard } from './TopicCard';
 import { TopicListSkeleton } from '../ui/Skeletons';
 import { EmptyState } from '../ui/EmptyState';
+import { NavTab } from './NavRail';
 import { Search, Plus, X, LogOut, MessageSquarePlus, FileText, UserPlus, Users } from 'lucide-react';
 
 interface TopicListProps {
   topics: TopicWithPreview[];
   activeTopicId: string | null;
+  activeTab?: NavTab;
   onSelectTopic: (topic: TopicWithPreview) => void;
   onCreateTopic: (title: string, isGroup?: boolean, memberUsernames?: string[]) => Promise<void> | void;
   isLoading: boolean;
@@ -21,6 +23,7 @@ interface TopicListProps {
 export function TopicList({
   topics,
   activeTopicId,
+  activeTab = 'all',
   onSelectTopic,
   onCreateTopic,
   isLoading,
@@ -45,6 +48,12 @@ export function TopicList({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredTopics = topics.filter((topic) => {
+    // Nav Rail Tab filter
+    if (activeTab === 'groups' && !topic.is_group) return false;
+    if (activeTab === 'direct' && topic.is_group) return false;
+    if (activeTab === 'calls' && !activeCallTopicIds.has(topic.id)) return false;
+
+    // Search query filter
     const title = topic.is_group 
       ? topic.title 
       : (topic.dm_peer?.display_name || topic.dm_peer?.username || topic.title);
@@ -87,17 +96,19 @@ export function TopicList({
     }
   };
 
+  const initial = currentProfile?.display_name?.[0]?.toUpperCase() || currentProfile?.username?.[0]?.toUpperCase() || 'U';
+
   return (
     <div className="flex flex-col h-full w-full bg-[#202C33] border-r border-[#2A3942]">
-      {/* User Profile / Status Bar */}
-      <div className="p-3 bg-[#202C33] flex items-center justify-between border-b border-[#2A3942]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#00A884]/20 flex items-center justify-center border border-[#00A884]/30 text-[#00A884] font-extrabold text-lg select-none">
-            {currentProfile?.display_name?.[0]?.toUpperCase() || currentProfile?.username?.[0]?.toUpperCase() || 'U'}
+      {/* Profile Header */}
+      <div className="p-3 bg-[#202C33] flex items-center justify-between border-b border-[#2A3942] shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-[#00A884]/20 flex items-center justify-center border border-[#00A884]/30 text-[#00A884] font-extrabold text-base shrink-0 select-none">
+            {initial}
           </div>
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-[#E9EDEF] truncate">
-              {currentProfile?.display_name || 'Loading user...'}
+              {currentProfile?.display_name || currentProfile?.username || 'User Profile'}
             </h2>
             <p className="text-[11px] text-[#8696A0] truncate">
               @{currentProfile?.username || 'user'}
@@ -105,11 +116,11 @@ export function TopicList({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => setIsCreating(true)}
             className="p-2 rounded-lg text-[#8696A0] hover:text-[#00A884] hover:bg-[#111B21]/50 transition-all cursor-pointer"
-            title="New Topic / Chat"
+            title="New Chat / Group"
           >
             <MessageSquarePlus className="w-5 h-5" />
           </button>
@@ -125,16 +136,14 @@ export function TopicList({
         </div>
       </div>
 
-      {/* Main Action Bar (Search & Dynamic Create Form) */}
-      <div className="p-3.5 space-y-3 border-b border-[#2A3942]">
-        
+      {/* Action Bar (Search & Inline Create Form) */}
+      <div className="p-3 space-y-3 border-b border-[#2A3942] shrink-0">
         {/* Inline Create Form */}
         {isCreating && (
           <form
             onSubmit={handleCreateSubmit}
             className="p-3 bg-[#111B21] border border-[#00A884]/60 rounded-xl space-y-3 animate-in fade-in slide-in-from-top-2 duration-150 shadow-lg"
           >
-            {/* Header Tabs */}
             <div className="flex items-center justify-between">
               <div className="flex gap-1.5 flex-wrap">
                 <button
@@ -146,7 +155,7 @@ export function TopicList({
                       : 'text-[#8696A0] hover:text-[#E9EDEF]'
                   }`}
                 >
-                  <FileText className="w-3 h-3" /> Solo Topic
+                  <FileText className="w-3 h-3" /> Solo
                 </button>
                 <button
                   type="button"
@@ -174,21 +183,20 @@ export function TopicList({
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                className="text-[#8696A0] hover:text-[#E9EDEF] p-1 rounded-lg hover:bg-[#202C33]/50"
+                className="text-[#8696A0] hover:text-[#E9EDEF] p-1 rounded-lg hover:bg-[#202C33]/50 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {creationMode === 'solo' ? (
-              // Solo Topic Input
               <div className="space-y-2">
                 <input
                   type="text"
                   required
                   value={soloTitle}
                   onChange={(e) => setSoloTitle(e.target.value)}
-                  placeholder="Enter topic title (e.g. My Personal Journal)..."
+                  placeholder="Enter topic title..."
                   autoFocus
                   className="w-full bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
                 />
@@ -201,14 +209,13 @@ export function TopicList({
                 </button>
               </div>
             ) : creationMode === 'dm' ? (
-              // Direct Message Inputs
               <div className="space-y-2">
                 <input
                   type="text"
                   required
                   value={peerUsername}
                   onChange={(e) => setPeerUsername(e.target.value)}
-                  placeholder="Enter user handle/username (e.g. john)"
+                  placeholder="Enter user handle/username..."
                   autoFocus
                   className="w-full bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
                 />
@@ -221,14 +228,13 @@ export function TopicList({
                 </button>
               </div>
             ) : (
-              // Group Chat Inputs
               <div className="space-y-2">
                 <input
                   type="text"
                   required
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
-                  placeholder="Group Name (e.g. Project Alpha)"
+                  placeholder="Group Name..."
                   autoFocus
                   className="w-full bg-[#202C33] border border-[#2A3942] rounded-lg px-3 py-2 text-xs text-[#E9EDEF] placeholder-[#8696A0] focus:outline-none focus:border-[#00A884]"
                 />
@@ -264,7 +270,7 @@ export function TopicList({
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8696A0] hover:text-[#E9EDEF]"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8696A0] hover:text-[#E9EDEF] cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -273,7 +279,7 @@ export function TopicList({
       </div>
 
       {/* Topic Cards Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
         {isLoading ? (
           <TopicListSkeleton />
         ) : topics.length === 0 ? (
@@ -281,7 +287,7 @@ export function TopicList({
         ) : filteredTopics.length === 0 ? (
           <div className="text-center py-12 px-4 space-y-2">
             <p className="text-sm font-medium text-[#E9EDEF]">No matching chats</p>
-            <p className="text-xs text-[#8696A0]">Try searching for another keyword.</p>
+            <p className="text-xs text-[#8696A0]">Try searching for another keyword or tab.</p>
           </div>
         ) : (
           filteredTopics.map((topic) => (
@@ -298,3 +304,4 @@ export function TopicList({
     </div>
   );
 }
+

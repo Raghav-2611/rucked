@@ -37,13 +37,13 @@ export function EmptyState({ type, onCreateTopic }: EmptyStateProps) {
   if (type === 'no-statements') {
     return (
       <div className="flex flex-col items-center justify-center text-center p-8 h-full space-y-3 my-auto">
-        <div className="w-14 h-14 rounded-full bg-[#202C33] text-[#00A884] flex items-center justify-center border border-[#2A3942]">
-          <MessageSquare className="w-7 h-7" />
+        <div className="w-16 h-16 rounded-full bg-[#202C33] text-[#00A884] flex items-center justify-center border border-[#2A3942] shadow-md">
+          <MessageSquare className="w-8 h-8" />
         </div>
         <div className="space-y-1 max-w-sm">
-          <h4 className="text-base font-medium text-[#E9EDEF]">This topic is empty</h4>
+          <h4 className="text-base font-semibold text-[#E9EDEF]">No messages yet</h4>
           <p className="text-xs text-[#8696A0]">
-            Type a note or thought in the box below and press <kbd className="px-1.5 py-0.5 text-[10px] bg-[#2A3942] rounded text-[#E9EDEF]">Enter</kbd> to add your first statement.
+            Send a message below to start the conversation.
           </p>
         </div>
       </div>
@@ -51,16 +51,17 @@ export function EmptyState({ type, onCreateTopic }: EmptyStateProps) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center text-center p-8 h-full space-y-4 bg-[#0B141A] chat-pattern">
+    <div className="flex flex-col items-center justify-center text-center p-8 h-full space-y-4 bg-[#0B141A]">
       <div className="w-20 h-20 rounded-full bg-[#202C33] text-[#00A884] flex items-center justify-center border border-[#2A3942] shadow-xl">
         <MessageSquare className="w-10 h-10" />
       </div>
-      <div className="space-y-1 max-w-md">
-        <h2 className="text-xl font-semibold text-[#E9EDEF]">Welcome to rucked</h2>
+      <div className="space-y-1.5 max-w-md">
+        <h2 className="text-xl font-bold text-[#E9EDEF]">Welcome to rucked</h2>
         <p className="text-sm text-[#8696A0] leading-relaxed">
-          Select a topic from the sidebar or create a new one to start writing your personal notes.
+          Select a chat from the panel or start a new conversation to begin messaging.
         </p>
       </div>
     </div>
   );
 }
+

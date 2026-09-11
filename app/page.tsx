@@ -1,16 +1,18 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Topic, Statement, TopicWithPreview, Profile, TopicMember, Role } from '@/lib/types';
 import { TopicList } from '@/components/sidebar/TopicList';
+import { NavRail, NavTab } from '@/components/sidebar/NavRail';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { RenameModal } from '@/components/ui/RenameModal';
+import { SettingsModal } from '@/components/ui/SettingsModal';
 import { Loader2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -27,7 +29,9 @@ export default function HomePage() {
   const [activeTopic, setActiveTopic] = useState<TopicWithPreview | null>(null);
   const [statements, setStatements] = useState<Statement[]>([]);
 
-  // UI state
+  // UI & Navigation state
+  const [navTab, setNavTab] = useState<NavTab>('all');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [isLoadingStatements, setIsLoadingStatements] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
@@ -271,7 +275,7 @@ export default function HomePage() {
       })
     );
 
-    // Requirement 5: Filter topics to ONLY show topics the user is in (creator or member)
+    // Filter topics to ONLY show topics the user is in (creator or member)
     const myTopics = enhanced.filter(
       (t) => t.created_by === currentUser.id || t.members?.some((m) => m.user_id === currentUser.id)
     );
@@ -601,6 +605,9 @@ export default function HomePage() {
     });
   };
 
+  // Calculate total unread count for NavRail badge
+  const totalUnread = topics.reduce((acc, t) => acc + (t.unreadCount || 0), 0);
+
   // ─── Loading screen ─────────────────────────────────────────────────────────
 
   if (isLoadingAuth) {
@@ -614,63 +621,84 @@ export default function HomePage() {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full max-w-full overflow-hidden bg-[#111B21]">
-      <div className="flex-1 flex w-full h-full overflow-hidden">
-        {/* Left Sidebar - Zero Gap */}
-        <div
-          className={`w-full md:w-[320px] lg:w-[360px] h-full shrink-0 ${
-            showMobileChat ? 'hidden md:flex' : 'flex'
-          }`}
-        >
-          <TopicList
-            topics={topics}
-            activeTopicId={activeTopic?.id || null}
-            onSelectTopic={handleSelectTopic}
-            onCreateTopic={handleCreateTopic}
-            isLoading={isLoadingTopics}
-            currentProfile={currentProfile}
-            onSignOut={handleSignOut}
-            activeCallTopicIds={activeCallTopicIds}
-          />
-        </div>
-
-        {/* Right Chat Area - Zero Gap */}
-        <div
-          className={`flex-1 h-full flex flex-col bg-[#0B141A] min-w-0 ${
-            !showMobileChat ? 'hidden md:flex' : 'flex'
-          }`}
-        >
-          {activeTopic ? (
-            <>
-              <ChatHeader
-                topic={activeTopic}
-                statementCount={statements.length}
-                onBackMobile={() => setShowMobileChat(false)}
-                onRenameTopic={() => setIsRenameModalOpen(true)}
-                onDeleteTopic={() => setIsDeleteModalOpen(true)}
-                currentProfile={currentProfile}
-                onMemberAdded={fetchTopics}
-                isCallActive={activeCallTopicIds.has(activeTopic.id)}
-                onCallStateChange={(isActive) => handleCallStateChange(activeTopic.id, isActive)}
-              />
-              <MessageList
-                statements={statements}
-                isLoading={isLoadingStatements}
-                onEditStatement={handleEditStatement}
-                onDeleteStatement={handleDeleteStatement}
-                currentUser={currentUser}
-              />
-              <MessageInput
-                onSend={handleSendStatement}
-                disabled={activeTopic.myRole === 'view'}
-                disabledReason="You have view-only access to this topic."
-              />
-            </>
-          ) : (
-            <EmptyState type="no-selection" />
-          )}
-        </div>
+    <div className="flex h-[100dvh] w-full max-w-full overflow-hidden bg-[#111B21]">
+      {/* 1. Left Navigation Rail (Narrow rail on extreme left) */}
+      <div className={`${showMobileChat ? 'hidden md:flex' : 'flex'} h-full shrink-0`}>
+        <NavRail
+          activeTab={navTab}
+          onTabChange={(tab) => {
+            setNavTab(tab);
+            if (showMobileChat) setShowMobileChat(false);
+          }}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          unreadTotal={totalUnread}
+          activeCallsCount={activeCallTopicIds.size}
+        />
       </div>
+
+      {/* 2. Chat List Panel */}
+      <div
+        className={`w-full md:w-[320px] lg:w-[360px] h-full shrink-0 ${
+          showMobileChat ? 'hidden md:flex' : 'flex'
+        }`}
+      >
+        <TopicList
+          topics={topics}
+          activeTopicId={activeTopic?.id || null}
+          activeTab={navTab}
+          onSelectTopic={handleSelectTopic}
+          onCreateTopic={handleCreateTopic}
+          isLoading={isLoadingTopics}
+          currentProfile={currentProfile}
+          onSignOut={handleSignOut}
+          activeCallTopicIds={activeCallTopicIds}
+        />
+      </div>
+
+      {/* 3. Main Chat Area */}
+      <div
+        className={`flex-1 h-full flex flex-col bg-[#0B141A] min-w-0 ${
+          !showMobileChat ? 'hidden md:flex' : 'flex'
+        }`}
+      >
+        {activeTopic ? (
+          <>
+            <ChatHeader
+              topic={activeTopic}
+              statementCount={statements.length}
+              onBackMobile={() => setShowMobileChat(false)}
+              onRenameTopic={() => setIsRenameModalOpen(true)}
+              onDeleteTopic={() => setIsDeleteModalOpen(true)}
+              currentProfile={currentProfile}
+              onMemberAdded={fetchTopics}
+              isCallActive={activeCallTopicIds.has(activeTopic.id)}
+              onCallStateChange={(isActive) => handleCallStateChange(activeTopic.id, isActive)}
+            />
+            <MessageList
+              statements={statements}
+              isLoading={isLoadingStatements}
+              onEditStatement={handleEditStatement}
+              onDeleteStatement={handleDeleteStatement}
+              currentUser={currentUser}
+            />
+            <MessageInput
+              onSend={handleSendStatement}
+              disabled={activeTopic.myRole === 'view'}
+              disabledReason="You have view-only access to this topic."
+            />
+          </>
+        ) : (
+          <EmptyState type="no-selection" />
+        )}
+      </div>
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        currentProfile={currentProfile}
+        onSignOut={handleSignOut}
+      />
 
       {/* Rename Modal */}
       {activeTopic && (
@@ -699,3 +727,4 @@ export default function HomePage() {
     </div>
   );
 }
+
