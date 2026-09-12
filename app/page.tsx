@@ -30,7 +30,7 @@ export default function HomePage() {
   const [statements, setStatements] = useState<Statement[]>([]);
 
   // UI & Navigation state
-  const [navTab, setNavTab] = useState<NavTab>('all');
+  const [navTab, setNavTab] = useState<NavTab>('direct');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [isLoadingStatements, setIsLoadingStatements] = useState(false);
@@ -698,6 +698,10 @@ export default function HomePage() {
         onClose={() => setIsSettingsOpen(false)}
         currentProfile={currentProfile}
         onSignOut={handleSignOut}
+        onUpdateProfile={(updated) => {
+          setCurrentProfile(updated);
+          fetchTopics();
+        }}
       />
 
       {/* Rename Modal */}
