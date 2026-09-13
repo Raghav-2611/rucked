@@ -12,7 +12,8 @@ import { MessageInput } from '@/components/chat/MessageInput';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { RenameModal } from '@/components/ui/RenameModal';
-import { SettingsModal } from '@/components/ui/SettingsModal';
+import { SettingsView } from '@/components/settings/SettingsView';
+import { EditProfileView } from '@/components/settings/EditProfileView';
 import { Loader2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -31,7 +32,7 @@ export default function HomePage() {
 
   // UI & Navigation state
   const [navTab, setNavTab] = useState<NavTab>('direct');
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsSubPage, setSettingsSubPage] = useState<'main' | 'profile'>('main');
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [isLoadingStatements, setIsLoadingStatements] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
@@ -341,6 +342,13 @@ export default function HomePage() {
     router.replace('/auth');
   };
 
+  // ─── Profile Update Handler ──────────────────────────────────────────────────
+
+  const handleUpdateProfile = (updated: Profile) => {
+    setCurrentProfile(updated);
+    fetchTopics();
+  };
+
   // ─── Topic Handlers ─────────────────────────────────────────────────────────
 
   const handleSelectTopic = (topic: TopicWithPreview) => {
@@ -622,46 +630,69 @@ export default function HomePage() {
 
   return (
     <div className="flex h-[100dvh] w-full max-w-full overflow-hidden bg-[#111B21]">
-      {/* 1. Left Navigation Rail (Narrow rail on extreme left) */}
+      {/* 1. Left Navigation Rail (Narrow rail on extreme left - PERMANENT) */}
       <div className={`${showMobileChat ? 'hidden md:flex' : 'flex'} h-full shrink-0`}>
         <NavRail
           activeTab={navTab}
           onTabChange={(tab) => {
             setNavTab(tab);
+            if (tab === 'settings') {
+              setSettingsSubPage('main');
+            }
             if (showMobileChat) setShowMobileChat(false);
           }}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSettings={() => {
+            setNavTab('settings');
+            setSettingsSubPage('main');
+            if (showMobileChat) setShowMobileChat(false);
+          }}
           unreadTotal={totalUnread}
           activeCallsCount={activeCallTopicIds.size}
         />
       </div>
 
-      {/* 2. Chat List Panel */}
+      {/* 2. Middle Panel: Chat List OR Settings Page OR Edit Profile Page */}
       <div
-        className={`w-full md:w-[320px] lg:w-[360px] h-full shrink-0 ${
+        className={`w-full md:w-[360px] lg:w-[420px] h-full shrink-0 ${
           showMobileChat ? 'hidden md:flex' : 'flex'
         }`}
       >
-        <TopicList
-          topics={topics}
-          activeTopicId={activeTopic?.id || null}
-          activeTab={navTab}
-          onSelectTopic={handleSelectTopic}
-          onCreateTopic={handleCreateTopic}
-          isLoading={isLoadingTopics}
-          currentProfile={currentProfile}
-          onSignOut={handleSignOut}
-          activeCallTopicIds={activeCallTopicIds}
-        />
+        {navTab === 'settings' ? (
+          settingsSubPage === 'profile' ? (
+            <EditProfileView
+              currentProfile={currentProfile}
+              onBackToSettings={() => setSettingsSubPage('main')}
+              onUpdateProfile={handleUpdateProfile}
+            />
+          ) : (
+            <SettingsView
+              currentProfile={currentProfile}
+              onNavigateToProfile={() => setSettingsSubPage('profile')}
+              onSignOut={handleSignOut}
+            />
+          )
+        ) : (
+          <TopicList
+            topics={topics}
+            activeTopicId={activeTopic?.id || null}
+            activeTab={navTab}
+            onSelectTopic={handleSelectTopic}
+            onCreateTopic={handleCreateTopic}
+            isLoading={isLoadingTopics}
+            currentProfile={currentProfile}
+            onSignOut={handleSignOut}
+            activeCallTopicIds={activeCallTopicIds}
+          />
+        )}
       </div>
 
-      {/* 3. Main Chat Area */}
+      {/* 3. Main Content / Chat Area */}
       <div
         className={`flex-1 h-full flex flex-col bg-[#0B141A] min-w-0 ${
           !showMobileChat ? 'hidden md:flex' : 'flex'
         }`}
       >
-        {activeTopic ? (
+        {activeTopic && navTab !== 'settings' ? (
           <>
             <ChatHeader
               topic={activeTopic}
@@ -692,18 +723,6 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        currentProfile={currentProfile}
-        onSignOut={handleSignOut}
-        onUpdateProfile={(updated) => {
-          setCurrentProfile(updated);
-          fetchTopics();
-        }}
-      />
-
       {/* Rename Modal */}
       {activeTopic && (
         <RenameModal
@@ -731,4 +750,5 @@ export default function HomePage() {
     </div>
   );
 }
+
 

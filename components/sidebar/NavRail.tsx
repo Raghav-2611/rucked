@@ -3,12 +3,12 @@
 import React from 'react';
 import { MessageSquare, Users, Phone, Settings } from 'lucide-react';
 
-export type NavTab = 'all' | 'direct' | 'groups' | 'calls';
+export type NavTab = 'all' | 'direct' | 'groups' | 'calls' | 'settings';
 
 interface NavRailProps {
   activeTab: NavTab;
   onTabChange: (tab: NavTab) => void;
-  onOpenSettings: () => void;
+  onOpenSettings?: () => void;
   unreadTotal?: number;
   activeCallsCount?: number;
 }
@@ -79,8 +79,15 @@ export function NavRail({
       <div className="flex flex-col items-center gap-3 w-full px-2">
         <button
           type="button"
-          onClick={onOpenSettings}
-          className="w-11 h-11 rounded-2xl flex items-center justify-center text-[#8696A0] hover:text-[#E9EDEF] hover:bg-[#202C33]/60 transition-all cursor-pointer"
+          onClick={() => {
+            if (onOpenSettings) onOpenSettings();
+            else onTabChange('settings');
+          }}
+          className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
+            activeTab === 'settings'
+              ? 'bg-[#00A884]/20 text-[#00A884] border border-[#00A884]/40 shadow-sm'
+              : 'text-[#8696A0] hover:text-[#E9EDEF] hover:bg-[#202C33]/60'
+          }`}
           title="Settings"
         >
           <Settings className="w-5 h-5" />
