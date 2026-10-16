@@ -14,6 +14,7 @@ export interface Topic {
   created_at: string;
   is_group: boolean;
   created_by: string | null;
+  is_public?: boolean;
 }
 
 export interface Statement {

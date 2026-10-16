@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Topic, Statement, TopicWithPreview, Profile, TopicMember, Role } from '@/lib/types';
 import { TopicList } from '@/components/sidebar/TopicList';
+import { ExploreView } from '@/components/sidebar/ExploreView';
 import { NavRail, NavTab } from '@/components/sidebar/NavRail';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageList } from '@/components/chat/MessageList';
@@ -55,7 +56,70 @@ export default function HomePage() {
     const initAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
 
+      // Check URL parameters for shared topic or user tag
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const sharedTopicId = params?.get('topic');
+      const tagParam = params?.get('tag');
+
       if (!session) {
+        if (sharedTopicId) {
+          // Unauthenticated guest viewing a shared topic link
+          const { data: topicData } = await supabase
+            .from('topics')
+            .select('*')
+            .eq('id', sharedTopicId)
+            .single();
+
+          if (topicData) {
+            const { data: stmtsData } = await supabase
+              .from('statements')
+              .select('*')
+              .eq('topic_id', sharedTopicId)
+              .order('created_at', { ascending: true });
+
+            const { data: membersData } = await supabase
+              .from('topic_members')
+              .select('topic_id, user_id, role, created_at, profiles(*)')
+              .eq('topic_id', sharedTopicId);
+
+            const formattedMembers: TopicMember[] = (membersData || []).map((m: any) => ({
+              topic_id: m.topic_id,
+              user_id: m.user_id,
+              role: m.role || 'view',
+              created_at: m.created_at,
+              profile: m.profiles,
+            }));
+
+            const lastStmt = stmtsData?.[stmtsData.length - 1];
+            const guestTopic: TopicWithPreview = {
+              ...topicData,
+              statementCount: stmtsData?.length || 0,
+              unreadCount: 0,
+              lastStatementPreview: lastStmt?.content,
+              lastActivityAt: lastStmt?.created_at ?? topicData.created_at,
+              members: formattedMembers,
+              myRole: 'view',
+              dm_peer: null,
+            };
+
+            setTopics([guestTopic]);
+            setActiveTopic(guestTopic);
+            setStatements(stmtsData || []);
+            setShowMobileChat(true);
+            setCurrentUser(null);
+            setCurrentProfile(null);
+            setIsLoadingAuth(false);
+            return;
+          }
+        } else if (tagParam) {
+          // Guest viewing explore tab
+          setNavTab('explore');
+          setCurrentUser(null);
+          setCurrentProfile(null);
+          setIsLoadingAuth(false);
+          return;
+        }
+
         router.replace('/auth');
         return;
       }
@@ -82,8 +146,8 @@ export default function HomePage() {
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
         router.replace('/auth');
       }
     });
@@ -287,9 +351,76 @@ export default function HomePage() {
       return timeB - timeA;
     });
 
+    // Check if a topic was requested via URL
+    let targetActive: TopicWithPreview | null = null;
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const urlTopicId = urlParams?.get('topic');
+
+    if (urlTopicId) {
+      const match = myTopics.find((t) => t.id === urlTopicId);
+      if (match) {
+        targetActive = match;
+      } else {
+        // Topic was shared with user, fetch directly
+        const { data: extTopic } = await supabase
+          .from('topics')
+          .select('*')
+          .eq('id', urlTopicId)
+          .single();
+
+        if (extTopic) {
+          const { data: stmts } = await supabase
+            .from('statements')
+            .select('content, created_at')
+            .eq('topic_id', extTopic.id)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          const { count } = await supabase
+            .from('statements')
+            .select('id', { count: 'exact', head: true })
+            .eq('topic_id', extTopic.id);
+
+          const { data: membersData } = await supabase
+            .from('topic_members')
+            .select('topic_id, user_id, role, created_at, profiles(*)')
+            .eq('topic_id', extTopic.id);
+
+          const formattedMembers: TopicMember[] = (membersData || []).map((m: any) => ({
+            topic_id: m.topic_id,
+            user_id: m.user_id,
+            role: m.role || 'view',
+            created_at: m.created_at,
+            profile: m.profiles,
+          }));
+
+          const myMem = formattedMembers.find((m) => m.user_id === currentUser.id);
+          const myRole: Role = myMem ? myMem.role : extTopic.created_by === currentUser.id ? 'admin' : 'view';
+
+          const lastStmt = stmts?.[0];
+          const extEnhanced: TopicWithPreview = {
+            ...extTopic,
+            statementCount: count ?? 0,
+            unreadCount: 0,
+            lastStatementPreview: lastStmt?.content,
+            lastActivityAt: lastStmt?.created_at ?? extTopic.created_at,
+            members: formattedMembers,
+            myRole,
+            dm_peer: null,
+          };
+
+          myTopics.unshift(extEnhanced);
+          targetActive = extEnhanced;
+        }
+      }
+    }
+
     setTopics(myTopics);
 
-    if (activeTopic) {
+    if (targetActive) {
+      setActiveTopic(targetActive);
+      setShowMobileChat(true);
+    } else if (activeTopic) {
       const updatedActive = myTopics.find((t) => t.id === activeTopic.id);
       if (updatedActive) setActiveTopic(updatedActive);
       else if (myTopics.length > 0) setActiveTopic(myTopics[0]);
@@ -351,25 +482,43 @@ export default function HomePage() {
 
   // ─── Topic Handlers ─────────────────────────────────────────────────────────
 
+  const handleAuthPrompt = () => {
+    const redirect = activeTopic ? `/?topic=${activeTopic.id}` : '/';
+    router.push(`/auth?redirect=${encodeURIComponent(redirect)}`);
+  };
+
   const handleSelectTopic = (topic: TopicWithPreview) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem(`rucked_read_${topic.id}`, new Date().toISOString());
+      const url = new URL(window.location.href);
+      url.searchParams.set('topic', topic.id);
+      window.history.replaceState(null, '', url.pathname + url.search);
     }
 
-    setTopics((prev) =>
-      prev.map((t) => (t.id === topic.id ? { ...t, unreadCount: 0 } : t))
-    );
+    setTopics((prev) => {
+      const exists = prev.some((t) => t.id === topic.id);
+      if (!exists) return [topic, ...prev];
+      return prev.map((t) => (t.id === topic.id ? { ...t, unreadCount: 0 } : t));
+    });
     setActiveTopic({ ...topic, unreadCount: 0 });
     setShowMobileChat(true);
   };
 
-  const handleCreateTopic = async (title: string, isGroup: boolean = false, memberUsernames: string[] = []) => {
-    if (!currentUser) return;
+  const handleCreateTopic = async (
+    title: string,
+    isGroup: boolean = false,
+    memberUsernames: string[] = [],
+    isPublic: boolean = true
+  ) => {
+    if (!currentUser) {
+      handleAuthPrompt();
+      return;
+    }
 
     // 1. Insert Topic
     const { data: createdTopic, error: createTopicErr } = await supabase
       .from('topics')
-      .insert([{ title, is_group: isGroup, created_by: currentUser.id }])
+      .insert([{ title, is_group: isGroup, created_by: currentUser.id, is_public: isPublic }])
       .select()
       .single();
 
@@ -421,6 +570,7 @@ export default function HomePage() {
       title: createdTopic.title,
       created_at: createdTopic.created_at,
       is_group: isGroup,
+      is_public: isPublic,
       created_by: currentUser.id,
       statementCount: 0,
       unreadCount: 0,
@@ -493,6 +643,10 @@ export default function HomePage() {
   // ─── Statement Handlers ─────────────────────────────────────────────────────
 
   const handleSendStatement = async (content: string) => {
+    if (!currentUser) {
+      handleAuthPrompt();
+      return;
+    }
     if (!activeTopic || activeTopic.myRole === 'view') return;
 
     const { data, error } = await supabase
@@ -671,6 +825,12 @@ export default function HomePage() {
               onSignOut={handleSignOut}
             />
           )
+        ) : navTab === 'explore' ? (
+          <ExploreView
+            onSelectTopic={handleSelectTopic}
+            activeTopicId={activeTopic?.id || null}
+            initialTag={typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('tag') || '') : ''}
+          />
         ) : (
           <TopicList
             topics={topics}
@@ -680,7 +840,11 @@ export default function HomePage() {
             onCreateTopic={handleCreateTopic}
             isLoading={isLoadingTopics}
             currentProfile={currentProfile}
-            onSignOut={handleSignOut}
+            onSignOut={currentUser ? handleSignOut : undefined}
+            onSignIn={handleAuthPrompt}
+            onSwitchToExplore={() => {
+              setNavTab('explore');
+            }}
             activeCallTopicIds={activeCallTopicIds}
           />
         )}
@@ -700,10 +864,12 @@ export default function HomePage() {
               onBackMobile={() => setShowMobileChat(false)}
               onRenameTopic={() => setIsRenameModalOpen(true)}
               onDeleteTopic={() => setIsDeleteModalOpen(true)}
+              currentUser={currentUser}
               currentProfile={currentProfile}
               onMemberAdded={fetchTopics}
               isCallActive={activeCallTopicIds.has(activeTopic.id)}
               onCallStateChange={(isActive) => handleCallStateChange(activeTopic.id, isActive)}
+              onAuthPrompt={handleAuthPrompt}
             />
             <MessageList
               statements={statements}
@@ -714,8 +880,10 @@ export default function HomePage() {
             />
             <MessageInput
               onSend={handleSendStatement}
-              disabled={activeTopic.myRole === 'view'}
+              disabled={activeTopic.myRole === 'view' && !!currentUser}
               disabledReason="You have view-only access to this topic."
+              isGuest={!currentUser}
+              onAuthPrompt={handleAuthPrompt}
             />
           </>
         ) : (

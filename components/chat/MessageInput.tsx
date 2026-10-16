@@ -1,15 +1,23 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { SendHorizonal, Lock } from 'lucide-react';
+import { SendHorizonal, Lock, Globe, LogIn } from 'lucide-react';
 
 interface MessageInputProps {
   onSend: (content: string) => Promise<void> | void;
   disabled?: boolean;
   disabledReason?: string;
+  isGuest?: boolean;
+  onAuthPrompt?: () => void;
 }
 
-export function MessageInput({ onSend, disabled = false, disabledReason }: MessageInputProps) {
+export function MessageInput({
+  onSend,
+  disabled = false,
+  disabledReason,
+  isGuest = false,
+  onAuthPrompt,
+}: MessageInputProps) {
   const [content, setContent] = useState('');
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -42,6 +50,31 @@ export function MessageInput({ onSend, disabled = false, disabledReason }: Messa
       handleSend();
     }
   };
+
+  if (isGuest) {
+    return (
+      <div
+        className="p-2.5 sm:p-3 bg-[#202C33] border-t border-[#2A3942] z-20 shrink-0 sticky bottom-0 w-full"
+        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 bg-[#111B21] border border-[#00A884]/40 rounded-2xl px-4 py-2.5 shadow-lg">
+          <div className="flex items-center gap-2 text-xs text-[#E9EDEF]">
+            <Globe className="w-4 h-4 text-[#00A884] shrink-0" />
+            <span>You are viewing this chat as a guest.</span>
+          </div>
+          {onAuthPrompt && (
+            <button
+              onClick={onAuthPrompt}
+              className="bg-[#00A884] hover:bg-[#008f70] text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Log in or Sign up to chat & call</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (disabled) {
     return (

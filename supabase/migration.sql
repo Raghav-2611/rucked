@@ -77,6 +77,7 @@ CREATE TRIGGER on_auth_user_created
 -- 3. Modify Topics Table
 ALTER TABLE public.topics ADD COLUMN IF NOT EXISTS is_group BOOLEAN DEFAULT false;
 ALTER TABLE public.topics ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
+ALTER TABLE public.topics ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT true;
 
 -- 4. Create Topic Members Join Table
 CREATE TABLE IF NOT EXISTS public.topic_members (

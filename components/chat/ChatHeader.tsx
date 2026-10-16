@@ -1,10 +1,8 @@
-'use client';
-
 import React, { useState } from 'react';
 import { TopicWithPreview, Role, Profile } from '@/lib/types';
 import { MemberModal } from './MemberModal';
 import { CallButton } from '../call/CallButton';
-import { ArrowLeft, Edit2, Trash2, Users, User, Share2, Eye, Video, Phone } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Users, User, Share2, Eye, Video, Phone, Check, LogIn, Globe } from 'lucide-react';
 
 interface ChatHeaderProps {
   topic: TopicWithPreview;
@@ -18,6 +16,7 @@ interface ChatHeaderProps {
   isCallActive?: boolean;
   activeCallMode?: 'voice' | 'video';
   onCallStateChange?: (isActive: boolean, mode: 'voice' | 'video') => void;
+  onAuthPrompt?: () => void;
 }
 
 export function ChatHeader({
@@ -26,25 +25,31 @@ export function ChatHeader({
   onBackMobile,
   onRenameTopic,
   onDeleteTopic,
+  currentUser,
   currentProfile,
   onMemberAdded,
   isCallActive = false,
   activeCallMode = 'video',
   onCallStateChange,
+  onAuthPrompt,
 }: ChatHeaderProps) {
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
   const [externalCallMode, setExternalCallMode] = useState<'voice' | 'video' | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const displayTitle = topic.is_group
     ? topic.title
     : (topic.dm_peer?.display_name || topic.dm_peer?.username || topic.title);
 
   const myRole: Role = topic.myRole || 'admin';
-  const isAdmin = myRole === 'admin';
-  const isViewer = myRole === 'view';
+  const isAdmin = currentUser && myRole === 'admin';
+  const isViewer = !currentUser || myRole === 'view';
+  const isGuest = !currentUser;
 
   const memberCount = topic.members?.length || 0;
-  const subtitle = isViewer
+  const subtitle = isGuest
+    ? 'Public View • Read-only'
+    : isViewer
     ? 'Read-only access'
     : memberCount > 1
     ? `${memberCount} members`
@@ -55,9 +60,22 @@ export function ChatHeader({
   const participantName = currentProfile?.username || 'user';
   const displayName = currentProfile?.display_name || currentProfile?.username || 'user';
 
+  const handleShareLink = () => {
+    if (typeof window === 'undefined') return;
+    const url = `${window.location.origin}/?topic=${topic.id}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    }
+  };
+
   const handleJoinCall = (mode: 'voice' | 'video') => {
+    if (isGuest && onAuthPrompt) {
+      onAuthPrompt();
+      return;
+    }
     setExternalCallMode(mode);
-    // Reset after trigger so it can be re-triggered if needed
     setTimeout(() => setExternalCallMode(null), 500);
   };
 
@@ -149,20 +167,41 @@ export function ChatHeader({
               />
             )}
 
-            {/* Members button */}
+            {/* Share Link Button */}
             <button
-              onClick={() => setIsMemberModalOpen(true)}
+              onClick={handleShareLink}
               className="p-2 text-[#8696A0] hover:text-[#00A884] hover:bg-[#111B21] rounded-lg transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
-              title="Manage Members & Permissions"
+              title="Copy link to this chat"
             >
-              <Share2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Members</span>
-              {memberCount > 0 && (
-                <span className="bg-[#00A884]/20 text-[#00A884] px-1.5 rounded-full text-[10px]">
-                  {memberCount}
-                </span>
+              {copiedLink ? (
+                <>
+                  <Check className="w-4 h-4 text-[#00A884]" />
+                  <span className="text-[#00A884]">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Share</span>
+                </>
               )}
             </button>
+
+            {/* Members button (Authenticated members only) */}
+            {currentUser && (
+              <button
+                onClick={() => setIsMemberModalOpen(true)}
+                className="p-2 text-[#8696A0] hover:text-[#00A884] hover:bg-[#111B21] rounded-lg transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+                title="Manage Members & Permissions"
+              >
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline">Members</span>
+                {memberCount > 0 && (
+                  <span className="bg-[#00A884]/20 text-[#00A884] px-1.5 rounded-full text-[10px]">
+                    {memberCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Rename (Admins only) */}
             {isAdmin && (
@@ -185,6 +224,18 @@ export function ChatHeader({
               >
                 <Trash2 className="w-4 h-4" />
                 <span className="hidden sm:inline">Delete</span>
+              </button>
+            )}
+
+            {/* Sign In button (Unauthenticated Guests) */}
+            {isGuest && onAuthPrompt && (
+              <button
+                onClick={onAuthPrompt}
+                className="bg-[#00A884] hover:bg-[#008f70] text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer ml-1"
+                title="Sign in or Sign up to send messages and join calls"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In / Sign Up</span>
               </button>
             )}
           </div>

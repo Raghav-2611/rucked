@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Eye, EyeOff, Loader2, MessageSquare } from 'lucide-react';
 
 type Tab = 'signin' | 'signup';
 
-export default function AuthPage() {
+function AuthContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams?.get('redirect') || '/';
   const [tab, setTab] = useState<Tab>('signin');
 
   // Sign In state
@@ -44,7 +46,7 @@ export default function AuthPage() {
         setError(signInError.message);
         setLoading(false);
       } else if (data.session) {
-        router.replace('/');
+        router.replace(redirectUrl);
         router.refresh();
       } else {
         setError('Sign in failed. Please check your credentials.');
@@ -95,8 +97,8 @@ export default function AuthPage() {
       }
 
       if (data.session) {
-        // Email confirmation OFF — session ready, go to app
-        router.replace('/');
+        // Email confirmation OFF — session ready, go to redirect or app
+        router.replace(redirectUrl);
         router.refresh();
       } else if (data.user) {
         // Account created (if email confirmation is required or not)
@@ -299,5 +301,19 @@ export default function AuthPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-screen flex items-center justify-center bg-[#111B21]">
+          <Loader2 className="w-8 h-8 text-[#00A884] animate-spin" />
+        </div>
+      }
+    >
+      <AuthContent />
+    </Suspense>
   );
 }

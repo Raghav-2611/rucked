@@ -1,9 +1,9 @@
 'use client';
 
 import React from 'react';
-import { MessageSquare, Users, Phone, Settings } from 'lucide-react';
+import { MessageSquare, Users, Phone, Settings, Compass } from 'lucide-react';
 
-export type NavTab = 'all' | 'direct' | 'groups' | 'calls' | 'settings';
+export type NavTab = 'all' | 'direct' | 'groups' | 'calls' | 'explore' | 'settings';
 
 interface NavRailProps {
   activeTab: NavTab;
@@ -55,6 +55,20 @@ export function NavRail({
           title="Groups"
         >
           <Users className="w-5 h-5" />
+        </button>
+
+        {/* Explore / Tag Search */}
+        <button
+          type="button"
+          onClick={() => onTabChange('explore')}
+          className={`relative w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
+            activeTab === 'explore'
+              ? 'bg-[#00A884]/20 text-[#00A884] border border-[#00A884]/40 shadow-sm'
+              : 'text-[#8696A0] hover:text-[#E9EDEF] hover:bg-[#202C33]/60'
+          }`}
+          title="Explore People & Public Topics"
+        >
+          <Compass className="w-5 h-5" />
         </button>
 
         {/* Calls */}
